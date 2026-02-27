@@ -14,19 +14,21 @@ class RegularBill {
 
         $stmt = $pdo->prepare("
             SELECT t.TripId, t.TripDate, t.InvoiceNo, t.FromLocation, t.ToLocation,
-                   t.FreightAmount, t.AdvanceAmount, t.TDS,
-                   (t.FreightAmount - t.AdvanceAmount - t.TDS) AS NetAmount,
-                   v.VehicleNumber
+                   t.FreightAmount, t.LabourCharge, t.HoldingCharge, t.OtherCharge, t.OtherChargeNote, t.TotalAmount,
+                   t.CashAdvance, t.OnlineAdvance, t.AdvanceAmount, t.TDS,
+                   (t.TotalAmount - t.AdvanceAmount - t.TDS) AS NetAmount,
+                   v.VehicleNumber,
+                   COALESCE((SELECT SUM(m.Weight) FROM TripMaterial m WHERE m.TripId = t.TripId), 0) AS TotalWeight
             FROM TripMaster t
             LEFT JOIN VehicleMaster v ON t.VehicleId = v.VehicleId
             LEFT JOIN BillTrip bt    ON t.TripId     = bt.TripId
             WHERE bt.TripId IS NULL
-              AND (t.ConsignerId=? OR t.ConsigneeId=?)
-              AND t.TripType='Regular'
+              AND t.ConsignerId = ?
+              AND t.TripType = 'Regular'
               AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus != 'PaidDirectly')
               $dateFrom $dateTo
             ORDER BY t.TripDate ASC");
-        $stmt->execute([$partyId, $partyId]);
+        $stmt->execute([$partyId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -43,13 +45,13 @@ class RegularBill {
             $billNo = $prefix . str_pad($seq, 3, '0', STR_PAD_LEFT);
 
             $phs = implode(',', array_fill(0, count($tripIds), '?'));
-            $sum = $pdo->prepare("SELECT SUM(FreightAmount) AS fr, SUM(AdvanceAmount) AS adv, SUM(TDS) AS tds FROM TripMaster WHERE TripId IN ($phs)");
+            $sum = $pdo->prepare("SELECT SUM(FreightAmount) AS fr, SUM(TotalAmount) AS total, SUM(AdvanceAmount) AS adv, SUM(TDS) AS tds FROM TripMaster WHERE TripId IN ($phs)");
             $sum->execute($tripIds); $s = $sum->fetch(PDO::FETCH_ASSOC);
-            $net = floatval($s['fr']) - floatval($s['adv']) - floatval($s['tds']);
+            $net = floatval($s['total']) - floatval($s['adv']) - floatval($s['tds']);
 
             $pdo->prepare("INSERT INTO Bill(BillNo,BillDate,PartyId,TotalFreightAmount,TotalAdvanceAmount,NetBillAmount,BillStatus,Remarks)
                            VALUES(?,?,?,?,?,?,'Generated',?)")
-                ->execute([$billNo, $billDate, $partyId, $s['fr'], $s['adv'], $net, $remarks]);
+                ->execute([$billNo, $billDate, $partyId, $s['total'], $s['adv'], $net, $remarks]);
             $billId = $pdo->lastInsertId();
 
             $lnk = $pdo->prepare("INSERT INTO BillTrip(BillId,TripId) VALUES(?,?)");
@@ -99,13 +101,15 @@ class RegularBill {
     public static function getBillTrips(PDO $pdo, int $billId): array {
         $stmt = $pdo->prepare("
             SELECT t.TripId, t.TripDate, t.InvoiceNo, t.FromLocation, t.ToLocation,
-                   t.FreightAmount, t.AdvanceAmount,
-                   (t.FreightAmount - t.AdvanceAmount) AS NetAmount,
-                   v.VehicleNumber
+                   t.FreightAmount, t.LabourCharge, t.HoldingCharge, t.OtherCharge, t.OtherChargeNote, t.TotalAmount,
+                   t.CashAdvance, t.OnlineAdvance, t.AdvanceAmount, t.TDS,
+                   (t.TotalAmount - t.AdvanceAmount - t.TDS) AS NetAmount,
+                   v.VehicleNumber,
+                   COALESCE((SELECT SUM(m.Weight) FROM TripMaterial m WHERE m.TripId = t.TripId), 0) AS TotalWeight
             FROM BillTrip bt
-            JOIN TripMaster t    ON bt.TripId   = t.TripId
+            JOIN TripMaster t         ON bt.TripId   = t.TripId
             LEFT JOIN VehicleMaster v ON t.VehicleId = v.VehicleId
-            WHERE bt.BillId=? ORDER BY t.TripDate ASC");
+            WHERE bt.BillId = ? ORDER BY t.TripDate ASC");
         $stmt->execute([$billId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -117,11 +121,11 @@ class RegularBill {
         return $pdo->query("
             SELECT DISTINCT p.PartyId, p.PartyName, p.City
             FROM TripMaster t
-            JOIN PartyMaster p ON (t.ConsignerId=p.PartyId OR t.ConsigneeId=p.PartyId)
-            LEFT JOIN BillTrip bt ON t.TripId=bt.TripId
+            JOIN PartyMaster p ON t.ConsignerId = p.PartyId
+            LEFT JOIN BillTrip bt ON t.TripId = bt.TripId
             WHERE bt.TripId IS NULL
-              AND t.TripType='Regular'
-              AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus!='PaidDirectly')
+              AND t.TripType = 'Regular'
+              AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus != 'PaidDirectly')
             ORDER BY p.PartyName ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
     }

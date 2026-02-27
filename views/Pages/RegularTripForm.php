@@ -380,7 +380,7 @@ require_once "../layout/sidebar.php";
                                     </div>
                                 </div>
                                  <div class="col-md-4">
-                                    <label class="form-label fw-semibold fs-13">Consignee Contact No.</label>
+                                    <label class="form-label fw-semibold fs-13">Consignee City</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-map-pin-line"></i></span>
                                         <input type="text" name="ConsigneeCity" class="form-control" maxlength="10"

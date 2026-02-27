@@ -167,34 +167,40 @@ class BillPayment {
     /* ══════════════════════════════════════════
        PAGE DATA — ALL BILLS (for manage page)
     ══════════════════════════════════════════ */
-    public static function getAllRegularBills(PDO $pdo): array {
-        return $pdo->query("
-            SELECT b.BillId, b.BillNo, b.BillDate, b.NetBillAmount, b.BillStatus,
-                   p.PartyName, p.City,
-                   COUNT(DISTINCT bt.TripId) AS TripCount,
-                   COALESCE(SUM(pay.Amount),0) AS PaidAmount
-            FROM Bill b
-            LEFT JOIN PartyMaster p    ON b.PartyId    = p.PartyId
-            LEFT JOIN BillTrip bt      ON b.BillId     = bt.BillId
-            LEFT JOIN billpayment pay  ON b.BillId     = pay.BillId
-            GROUP BY b.BillId ORDER BY b.BillId DESC LIMIT 200
-        ")->fetchAll(PDO::FETCH_ASSOC);
-    }
+   public static function getAllRegularBills(PDO $pdo): array {
+    return $pdo->query("
+        SELECT 
+            b.BillId, 
+            b.BillNo, 
+            b.BillDate, 
+            b.NetBillAmount, 
+            b.BillStatus,
+            p.PartyName, 
+            p.City,
 
-    public static function getAllAgentBills(PDO $pdo): array {
-        return $pdo->query("
-            SELECT b.AgentBillId, b.AgentBillNo, b.AgentBillDate, b.NetBillAmount, b.BillStatus,
-                   p.PartyName, p.City,
-                   COUNT(DISTINCT abt.TripId) AS TripCount,
-                   COALESCE(SUM(pay.Amount),0) AS PaidAmount
-            FROM AgentBill b
-            LEFT JOIN PartyMaster p          ON b.AgentPartyId      = p.PartyId
-            LEFT JOIN AgentBillTrip abt      ON b.AgentBillId       = abt.AgentBillId
-            LEFT JOIN agentbillpayment pay   ON b.AgentBillId       = pay.AgentBillId
-            GROUP BY b.AgentBillId ORDER BY b.AgentBillId DESC LIMIT 200
-        ")->fetchAll(PDO::FETCH_ASSOC);
-    }
+            -- Trip Count
+            (
+                SELECT COUNT(DISTINCT bt.TripId)
+                FROM BillTrip bt
+                WHERE bt.BillId = b.BillId
+            ) AS TripCount,
 
+            -- Paid Amount (NO DUPLICATION)
+            (
+                SELECT COALESCE(SUM(pay.Amount),0)
+                FROM billpayment pay
+                WHERE pay.BillId = b.BillId
+            ) AS PaidAmount
+
+        FROM Bill b
+        LEFT JOIN PartyMaster p ON b.PartyId = p.PartyId
+
+        ORDER BY b.BillId DESC
+        LIMIT 200
+    ")->fetchAll(PDO::FETCH_ASSOC);
+}
+
+  
     public static function getOwnerRecoveryTrips(PDO $pdo): array {
         return $pdo->query("
             SELECT t.TripId, t.TripDate, t.FromLocation, t.ToLocation, t.FreightAmount, t.TripType,

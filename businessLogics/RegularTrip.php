@@ -265,19 +265,18 @@ class RegularTrip {
                 }
             }
 
-            // Commission (Always Update | Never Delete)
+            // Commission — pehle purana delete karo, phir naya insert
+            // Isse guarantee hoga ki 1 trip = 1 commission hamesha
             $commission = floatval($data['CommissionAmount'] ?? 0);
-
             $rf = ($data['FreightPaymentToOwnerStatus'] ?? 'Pending') === 'PaidDirectly'
-                ? 'Owner'
-                : 'Party';
+                ? 'Owner' : 'Party';
+
+            $pdo->prepare("DELETE FROM TripCommission WHERE TripId = ?")
+                ->execute([$id]);
 
             $pdo->prepare("
                 INSERT INTO TripCommission (TripId, CommissionAmount, RecoveryFrom)
                 VALUES (?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    CommissionAmount = VALUES(CommissionAmount),
-                    RecoveryFrom = VALUES(RecoveryFrom)
             ")->execute([$id, $commission, $rf]);
 
             $pdo->commit();

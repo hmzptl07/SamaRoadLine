@@ -23,7 +23,7 @@ if (isset($_POST['generateBill'])) {
 
 /* ══ Page Data ══ */
 $bills   = RegularBill::getAllBills($pdo);
-$parties = array_filter(Party::getAll(), fn($p) => in_array($p['PartyType'], ['Consigner','Consignee','Both']) && $p['IsActive']==='Yes');
+$parties = array_filter(Party::getAll(), fn($p) => $p['PartyType'] === 'Consigner' && $p['IsActive'] === 'Yes');
 
 $total      = count($bills);
 $paid       = count(array_filter($bills, fn($b) => $b['BillStatus']==='Paid'));
@@ -203,9 +203,9 @@ require_once "../layout/sidebar.php";
         </td>
         <td>
             <div class="action-btn-group">
-                <button class="btn btn-sm btn-outline-dark btn-icon"
-                    onclick="window.open('RegularBill_print.php?BillId=<?= $b['BillId'] ?>','_blank','width=950,height=720')"
-                    title="Print Bill"><i class="ri-printer-line"></i></button>
+                            <a href="RegularBill_print.php?BillId=<?= $b['BillId'] ?>" target="_blank" class="btn btn-sm btn-outline-dark btn-icon" title="Print Bill"><i class="ri-printer-line"></i></a>
+
+               
                 <a href="BillPayment_manage.php" class="btn btn-sm btn-outline-success btn-icon" title="Manage Payment">
                     <i class="ri-secure-payment-line"></i>
                 </a>
@@ -282,19 +282,32 @@ require_once "../layout/sidebar.php";
                         <tr>
                             <th style="width:40px;"><input type="checkbox" id="chkAll" onchange="toggleAll(this)"></th>
                             <th>Date</th><th>LR No.</th><th>Vehicle</th><th>Invoice</th>
-                            <th>From</th><th>To</th>
-                            <th class="text-end">Freight</th><th class="text-end">Advance</th>
-                            <th class="text-end">TDS</th><th class="text-end">Net</th>
+                            <th>From</th><th>To</th><th class="text-end">Weight</th>
+                            <th class="text-end">Freight</th>
+                            <th class="text-end">Labour</th>
+                            <th class="text-end">Holding</th>
+                            <th class="text-end">Other</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-end">Cash Adv.</th>
+                            <th class="text-end">Online Adv.</th>
+                            <th class="text-end">TDS</th>
+                            <th class="text-end">Net</th>
                         </tr>
                     </thead>
                     <tbody id="tripsBody"></tbody>
                     <tfoot style="background:#f0f4ff;">
                         <tr class="fw-bold">
                             <td colspan="7" class="text-end" style="color:#1a237e;">TOTAL:</td>
+                            <td class="text-end" id="tWt">0.000</td>
                             <td class="text-end" id="tFr">0.00</td>
-                            <td class="text-end" id="tAdv">0.00</td>
+                            <td class="text-end" id="tLab">0.00</td>
+                            <td class="text-end" id="tHold">0.00</td>
+                            <td class="text-end" id="tOth">0.00</td>
+                            <td class="text-end fw-bold" id="tTotal">0.00</td>
+                            <td class="text-end" id="tCash">0.00</td>
+                            <td class="text-end" id="tOnline">0.00</td>
                             <td class="text-end" id="tTds">0.00</td>
-                            <td class="text-end text-primary" id="tNet">0.00</td>
+                            <td class="text-end text-primary fw-bold" id="tNet">0.00</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -406,6 +419,8 @@ function loadTrips(){
         var html='';
         data.forEach(function(t,i){
             var lr=String(t.TripId).padStart(4,'0');
+            var wt=parseFloat(t.TotalWeight||0).toFixed(3);
+            var otherNote = t.OtherChargeNote ? ' <small class="text-muted">('+t.OtherChargeNote+')</small>' : '';
             html+=`<tr>
                 <td class="text-center"><input type="checkbox" class="tripChk" data-idx="${i}" onchange="updateTotals()"></td>
                 <td style="font-size:12px;white-space:nowrap;">${t.TripDate}</td>
@@ -414,8 +429,14 @@ function loadTrips(){
                 <td style="font-size:12px;">${t.InvoiceNo||'—'}</td>
                 <td style="font-size:12px;">${t.FromLocation||'—'}</td>
                 <td style="font-size:12px;">${t.ToLocation||'—'}</td>
+                <td class="text-end" style="font-size:12px;">${wt} T</td>
                 <td class="text-end fw-medium" style="font-size:12px;">${parseFloat(t.FreightAmount||0).toFixed(2)}</td>
-                <td class="text-end" style="font-size:12px;">${parseFloat(t.AdvanceAmount||0).toFixed(2)}</td>
+                <td class="text-end" style="font-size:12px;">${parseFloat(t.LabourCharge||0).toFixed(2)}</td>
+                <td class="text-end" style="font-size:12px;">${parseFloat(t.HoldingCharge||0).toFixed(2)}</td>
+                <td class="text-end" style="font-size:12px;">${parseFloat(t.OtherCharge||0).toFixed(2)}${otherNote}</td>
+                <td class="text-end fw-bold" style="font-size:12px;color:#1a237e;">${parseFloat(t.TotalAmount||0).toFixed(2)}</td>
+                <td class="text-end" style="font-size:12px;color:#dc2626;">${parseFloat(t.CashAdvance||0).toFixed(2)}</td>
+                <td class="text-end" style="font-size:12px;color:#dc2626;">${parseFloat(t.OnlineAdvance||0).toFixed(2)}</td>
                 <td class="text-end" style="font-size:12px;">${parseFloat(t.TDS||0).toFixed(2)}</td>
                 <td class="text-end fw-bold text-primary" style="font-size:12px;">${parseFloat(t.NetAmount||0).toFixed(2)}</td>
             </tr>`;
@@ -431,14 +452,32 @@ function selectAll(){ $('.tripChk').prop('checked',true); updateTotals(); }
 function clearAll(){ $('.tripChk').prop('checked',false); $('#chkAll').prop('checked',false); updateTotals(); }
 
 function updateTotals(){
-    var fr=0,adv=0,tds=0,net=0,cnt=0;
+    var fr=0,lab=0,hold=0,oth=0,total=0,cash=0,online=0,adv=0,tds=0,net=0,wt=0,cnt=0;
     $('.tripChk:checked').each(function(){
         var t=trips[$(this).data('idx')];
-        fr+=parseFloat(t.FreightAmount||0); adv+=parseFloat(t.AdvanceAmount||0);
-        tds+=parseFloat(t.TDS||0); net+=parseFloat(t.NetAmount||0); cnt++;
+        fr+=parseFloat(t.FreightAmount||0);
+        lab+=parseFloat(t.LabourCharge||0);
+        hold+=parseFloat(t.HoldingCharge||0);
+        oth+=parseFloat(t.OtherCharge||0);
+        total+=parseFloat(t.TotalAmount||0);
+        cash+=parseFloat(t.CashAdvance||0);
+        online+=parseFloat(t.OnlineAdvance||0);
+        adv+=parseFloat(t.AdvanceAmount||0);
+        tds+=parseFloat(t.TDS||0);
+        net+=parseFloat(t.NetAmount||0);
+        wt+=parseFloat(t.TotalWeight||0);
+        cnt++;
     });
-    $('#tFr').text(fr.toFixed(2)); $('#tAdv').text(adv.toFixed(2));
-    $('#tTds').text(tds.toFixed(2)); $('#tNet').text(net.toFixed(2));
+    $('#tWt').text(wt.toFixed(3)+' T');
+    $('#tFr').text(fr.toFixed(2));
+    $('#tLab').text(lab.toFixed(2));
+    $('#tHold').text(hold.toFixed(2));
+    $('#tOth').text(oth.toFixed(2));
+    $('#tTotal').text(total.toFixed(2));
+    $('#tCash').text(cash.toFixed(2));
+    $('#tOnline').text(online.toFixed(2));
+    $('#tTds').text(tds.toFixed(2));
+    $('#tNet').text(net.toFixed(2));
     $('#selCount').text(cnt+' selected');
     $('#finalNet').text('Rs. '+net.toLocaleString('en-IN',{minimumFractionDigits:2}));
     $('#finalNet').css('color', net<0 ? '#dc2626' : '#1a237e');

@@ -2,7 +2,7 @@
 session_start();
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 require_once "../../businessLogics/Admin.php";
-require_once "../../businessLogics/Trip.php";
+require_once "../../businessLogics/AgentTrip.php";
 require_once "../../businessLogics/Party.php";
 require_once "../../businessLogics/Vehicle.php";
 Admin::checkAuth();
@@ -33,18 +33,25 @@ if (isset($_POST["saveTrip"])) {
         }
         $data["FreightAmount"] = $matSum;
 
+        // CashAdvance + OnlineAdvance = AdvanceAmount
+        $cashAdv   = floatval($data["CashAdvance"]   ?? 0);
+        $onlineAdv = floatval($data["OnlineAdvance"] ?? 0);
+        $data["AdvanceAmount"] = $cashAdv + $onlineAdv;
+
         // Recalculate TotalAmount and NetAmount server-side
         $fr  = $matSum;
-        $la  = floatval($data["LabourCharge"] ?? 0);
+        $la  = floatval($data["LabourCharge"]  ?? 0);
         $ho  = floatval($data["HoldingCharge"] ?? 0);
-        $ot  = floatval($data["OtherCharge"] ?? 0);
-        $adv = floatval($data["AdvanceAmount"] ?? 0);
-        $tds = floatval($data["TDS"] ?? 0);
+        $ot  = floatval($data["OtherCharge"]   ?? 0);
+        $tds = floatval($data["TDS"]           ?? 0);
         $data["TotalAmount"] = $fr + $la + $ho + $ot;
-        $data["NetAmount"]   = $data["TotalAmount"] - $adv - $tds;
+        $data["NetAmount"]   = $data["TotalAmount"] - $data["AdvanceAmount"] - $tds;
+
+        // CommissionAmount directly from POST (user-entered)
+        $data["CommissionAmount"] = floatval($data["CommissionAmount"] ?? 0);
 
         $tripId = !empty($data["TripId"]) ? intval($data["TripId"]) : 0;
-        $result = $tripId > 0 ? Trip::update($tripId, $data) : Trip::insert($data);
+        $result = $tripId > 0 ? AgentTrip::update($tripId, $data) : AgentTrip::insert($data);
 
         echo json_encode([
             "status"  => $result ? "success" : "error",
@@ -61,14 +68,15 @@ if (isset($_POST["saveTrip"])) {
 $tripId    = intval($_GET["TripId"] ?? 0);
 $editTrip  = null;
 $materials = [];
+$editCommission = 0;
 if ($tripId > 0) {
-    $editTrip  = Trip::getById($tripId);
-    // Ensure this is actually an Agent trip
+    $editTrip  = AgentTrip::getById($tripId);
     if ($editTrip && $editTrip["TripType"] !== "Agent") {
         header("Location: RegularTripForm.php?TripId=$tripId");
         exit();
     }
-    $materials = Trip::getMaterials($tripId);
+    $materials      = AgentTrip::getMaterials($tripId);
+    $editCommission = floatval($editTrip["CommissionAmount"] ?? 0);
 }
 $isEdit    = $editTrip !== null;
 $pageTitle = $isEdit ? "Edit Agent Trip #$tripId" : "New Agent Trip";
@@ -306,7 +314,7 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <label class="form-label fw-semibold fs-13">Trip Date <span class="req">*</span></label>
                                     <input type="date" name="TripDate" class="form-control" value="<?= $isEdit ? fv("TripDate", $editTrip) : date("Y-m-d") ?>">
                                 </div>
@@ -321,10 +329,15 @@ require_once "../layout/sidebar.php";
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-md-3">
-                                    <label class="form-label fw-semibold fs-13">Party Invoice No.</label>
+                                <div class="col-md-2">
+                                    <label class="form-label fw-semibold fs-13">Invoice No.</label>
                                     <input type="text" name="InvoiceNo" class="form-control"
                                         value="<?= $isEdit ? fv("InvoiceNo", $editTrip) : "" ?>" placeholder="Invoice no.">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label fw-semibold fs-13">L.R. No. <span class="badge bg-warning text-dark ms-1" style="font-size:9px;">Agent</span></label>
+                                    <input type="text" name="LRNo" class="form-control"
+                                        value="<?= $isEdit ? fv("LRNo", $editTrip) : "" ?>" placeholder="LR number">
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label fw-semibold fs-13">Owner Payment</label>
@@ -532,11 +545,19 @@ require_once "../layout/sidebar.php";
 
                             <div class="sec-badge mt-1"><i class="ri-subtract-line"></i>Deductions</div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Advance Paid (Rs.)</label>
+                                <label class="form-label fw-semibold fs-13">💰 Cash Advance (Rs.)</label>
                                 <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-arrow-up-circle-line text-warning"></i></span>
-                                    <input type="number" step="0.01" name="AdvanceAmount" id="advanceAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("AdvanceAmount", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                    <span class="input-group-text bg-light" style="font-size:13px;">Rs.</span>
+                                    <input type="number" step="0.01" name="CashAdvance" id="cashAdv" class="form-control charge-input" min="0"
+                                        value="<?= $isEdit ? fm("CashAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold fs-13">💳 Online Advance (Rs.)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light" style="font-size:13px;">Rs.</span>
+                                    <input type="number" step="0.01" name="OnlineAdvance" id="onlineAdv" class="form-control charge-input" min="0"
+                                        value="<?= $isEdit ? fm("OnlineAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
                                 </div>
                             </div>
                             <div class="mb-3">
@@ -547,7 +568,17 @@ require_once "../layout/sidebar.php";
                                         value="<?= $isEdit ? fm("TDS", $editTrip) : "0.00" ?>" placeholder="0.00">
                                 </div>
                             </div>
-                            <!-- NOTE: Agent trips have NO commission field -->
+
+                            <div class="sec-badge mt-1" style="background:#fef9c3;color:#78350f;"><i class="ri-percent-line"></i>Commission</div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold fs-13">Commission Amount (Rs.) <span class="badge bg-warning text-dark ms-1" style="font-size:9px;">Agent ← Owner</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light"><i class="ri-percent-line" style="color:#d97706;"></i></span>
+                                    <input type="number" step="0.01" name="CommissionAmount" id="commAmt" class="form-control charge-input" min="0"
+                                        value="<?= $isEdit ? number_format($editCommission, 2, '.', '') : "0.00" ?>" placeholder="0.00">
+                                </div>
+                                <div class="form-text fs-11"><i class="ri-information-line"></i> Commission Agent ko milegi, Owner se recover hogi</div>
+                            </div>
 
                             <!-- Summary -->
                             <div class="summary-box">
@@ -573,18 +604,27 @@ require_once "../layout/sidebar.php";
                                         <td class="text-end fw-bold pt-2" id="sum_total">Rs.0.00</td>
                                     </tr>
                                     <tr>
-                                        <td class="text-danger">➖ Advance</td>
-                                        <td class="text-end text-danger" id="sum_advance">Rs.0.00</td>
+                                        <td class="text-danger">➖ 💰 Cash Adv.</td>
+                                        <td class="text-end text-danger" id="sum_cash">Rs.0.00</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-danger">➖ 💳 Online Adv.</td>
+                                        <td class="text-end text-danger" id="sum_online">Rs.0.00</td>
                                     </tr>
                                     <tr>
                                         <td class="text-danger">➖ TDS</td>
                                         <td class="text-end text-danger" id="sum_tds">Rs.0.00</td>
+                                    </tr>
+                                    <tr style="border-top:1px dashed #fcd34d;">
+                                        <td class="text-warning fw-semibold">🤝 Commission</td>
+                                        <td class="text-end fw-semibold" id="sum_comm" style="color:#d97706;">Rs.0.00</td>
                                     </tr>
                                 </table>
                                 <div class="net-label mt-2">Net Payable Amount</div>
                                 <div class="net-amount" id="sum_net">Rs.0.00</div>
                                 <input type="hidden" name="TotalAmount" id="hidTotal">
                                 <input type="hidden" name="NetAmount" id="hidNet">
+                                <input type="hidden" name="AdvanceAmount" id="hidAdv">
                             </div>
                         </div>
                     </div>
@@ -677,7 +717,7 @@ require_once "../layout/sidebar.php";
         calcTotal();
     }
 
-    $(document).on("input", "#labourAmt,#holdingAmt,#otherAmt,#advanceAmt,#tdsAmt", calcTotal);
+    $(document).on("input", "#labourAmt,#holdingAmt,#otherAmt,#cashAdv,#onlineAdv,#tdsAmt,#commAmt", calcTotal);
 
     function f(id) {
         return parseFloat($(id).val()) || 0;
@@ -691,25 +731,31 @@ require_once "../layout/sidebar.php";
     }
 
     function calcTotal() {
-        var fr = f("#freightAmt"),
-            la = f("#labourAmt"),
-            ho = f("#holdingAmt"),
-            ot = f("#otherAmt");
-        var ad = f("#advanceAmt"),
-            td = f("#tdsAmt");
+        var fr   = f("#freightAmt"),
+            la   = f("#labourAmt"),
+            ho   = f("#holdingAmt"),
+            ot   = f("#otherAmt");
+        var cash = f("#cashAdv"),
+            onl  = f("#onlineAdv"),
+            td   = f("#tdsAmt"),
+            comm = f("#commAmt");
+        var adv   = cash + onl;
         var total = fr + la + ho + ot;
-        var net = total - ad - td;
+        var net   = total - adv - td;
         $("#sum_freight").text(rupee(fr));
         $("#sum_labour").text(rupee(la));
         $("#sum_holding").text(rupee(ho));
         $("#sum_other").text(rupee(ot));
         $("#sum_total").text(rupee(total));
-        $("#sum_advance").text(rupee(ad));
+        $("#sum_cash").text(rupee(cash));
+        $("#sum_online").text(rupee(onl));
         $("#sum_tds").text(rupee(td));
+        $("#sum_comm").text(rupee(comm));
         $("#sum_net").text(rupee(net));
         document.getElementById("sum_net").style.color = net < 0 ? "#dc2626" : "#92400e";
         $("#hidTotal").val(total.toFixed(2));
         $("#hidNet").val(net.toFixed(2));
+        $("#hidAdv").val(adv.toFixed(2));
     }
     $("#tripForm").on("submit", function(e) {
         e.preventDefault();
