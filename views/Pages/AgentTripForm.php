@@ -314,7 +314,7 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div class="col-md-2">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">Trip Date <span class="req">*</span></label>
                                     <input type="date" name="TripDate" class="form-control" value="<?= $isEdit ? fv("TripDate", $editTrip) : date("Y-m-d") ?>">
                                 </div>
@@ -329,22 +329,23 @@ require_once "../layout/sidebar.php";
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">Invoice No.</label>
                                     <input type="text" name="InvoiceNo" class="form-control"
                                         value="<?= $isEdit ? fv("InvoiceNo", $editTrip) : "" ?>" placeholder="Invoice no.">
                                 </div>
-                                <div class="col-md-2">
-                                    <label class="form-label fw-semibold fs-13">L.R. No. <span class="badge bg-warning text-dark ms-1" style="font-size:9px;">Agent</span></label>
-                                    <input type="text" name="LRNo" class="form-control"
-                                        value="<?= $isEdit ? fv("LRNo", $editTrip) : "" ?>" placeholder="LR number">
-                                </div>
-                                <div class="col-md-2">
+
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">Owner Payment</label>
                                     <select name="FreightPaymentToOwnerStatus" class="form-select">
                                         <option value="Pending" <?= (!$isEdit || ($editTrip["FreightPaymentToOwnerStatus"] ?? "") === "Pending") ? "selected" : "" ?>>⏳ Pending</option>
                                         <option value="PaidDirectly" <?= (($editTrip["FreightPaymentToOwnerStatus"] ?? "") === "PaidDirectly") ? "selected" : "" ?>>✅ Paid Directly</option>
                                     </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold fs-13">L.R. No. <span class="badge bg-warning text-dark ms-1" style="font-size:9px;">Agent</span></label>
+                                    <input type="text" name="LRNo" class="form-control"
+                                        value="<?= $isEdit ? fv("LRNo", $editTrip) : "" ?>" placeholder="LR number">
                                 </div>
                             </div>
                         </div>
@@ -358,18 +359,20 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div class="col-md-5">
-                                    <label class="form-label fw-semibold fs-13">Agent <span class="req">*</span></label>
-                                    <select name="AgentId" id="sel_Agent" class="form-select">
-                                        <option value="">-- Search Agent --</option>
-                                        <?php foreach ($agents as $p): ?>
-                                            <option value="<?= $p["PartyId"] ?>" <?= (($editTrip["AgentId"] ?? "") == $p["PartyId"]) ? "selected" : "" ?>>
-                                                <?= htmlspecialchars($p["PartyName"]) ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                <div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold fs-13">Agent <span class="req">*</span></label>
+                                        <select name="AgentId" id="sel_Agent" class="form-select">
+                                            <option value="">-- Search Agent --</option>
+                                            <?php foreach ($agents as $p): ?>
+                                                <option value="<?= $p["PartyId"] ?>" <?= (($editTrip["AgentId"] ?? "") == $p["PartyId"]) ? "selected" : "" ?>>
+                                                    <?= htmlspecialchars($p["PartyName"]) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">From Location</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-map-pin-2-line" style="color:#d97706;"></i></span>
@@ -377,7 +380,7 @@ require_once "../layout/sidebar.php";
                                             value="<?= $isEdit ? fv("FromLocation", $editTrip) : "" ?>" placeholder="e.g. Surat">
                                     </div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">To Location</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-map-pin-line text-danger"></i></span>
@@ -397,22 +400,22 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Driver Name</label>
                                     <input type="text" name="DriverName" class="form-control" value="<?= $isEdit ? fv("DriverName", $editTrip) : "" ?>" placeholder="Full name">
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Contact No</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-phone-line"></i></span>
                                         <input type="text" name="DriverContactNo" class="form-control" maxlength="10" value="<?= $isEdit ? fv("DriverContactNo", $editTrip) : "" ?>" placeholder="10 digits">
                                     </div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Aadhar No</label>
                                     <input type="text" name="DriverAadharNo" class="form-control" maxlength="12" value="<?= $isEdit ? fv("DriverAadharNo", $editTrip) : "" ?>" placeholder="12 digits">
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Driver Address</label>
                                     <input type="text" name="DriverAddress" class="form-control" value="<?= $isEdit ? fv("DriverAddress", $editTrip) : "" ?>" placeholder="Address">
                                 </div>
@@ -514,21 +517,28 @@ require_once "../layout/sidebar.php";
 
                             <div class="sec-badge mt-1"><i class="ri-add-circle-line"></i>Extra Charges</div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Labour Charge (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-user-line text-muted"></i></span>
-                                    <input type="number" step="0.01" name="LabourCharge" id="labourAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("LabourCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
+
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Labour Charge (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-user-line text-muted"></i></span>
+                                            <input type="number" step="0.01" name="LabourCharge" id="labourAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("LabourCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Holding / Detention (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-time-line text-muted"></i></span>
+                                            <input type="number" step="0.01" name="HoldingCharge" id="holdingAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("HoldingCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
                                 </div>
+
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Holding / Detention (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-time-line text-muted"></i></span>
-                                    <input type="number" step="0.01" name="HoldingCharge" id="holdingAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("HoldingCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
-                                </div>
-                            </div>
+
                             <div class="mb-3">
                                 <label class="form-label fw-semibold fs-13">Other Charge (Rs.)</label>
                                 <div class="row g-2">
@@ -545,40 +555,50 @@ require_once "../layout/sidebar.php";
 
                             <div class="sec-badge mt-1"><i class="ri-subtract-line"></i>Deductions</div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">💰 Cash Advance (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light" style="font-size:13px;">Rs.</span>
-                                    <input type="number" step="0.01" name="CashAdvance" id="cashAdv" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("CashAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">💰 Cash Advance (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light" style="font-size:13px;">Rs.</span>
+                                            <input type="number" step="0.01" name="CashAdvance" id="cashAdv" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("CashAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">💳 Online Advance (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light" style="font-size:13px;">Rs.</span>
+                                            <input type="number" step="0.01" name="OnlineAdvance" id="onlineAdv" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("OnlineAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">💳 Online Advance (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light" style="font-size:13px;">Rs.</span>
-                                    <input type="number" step="0.01" name="OnlineAdvance" id="onlineAdv" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("OnlineAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">TDS (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-government-line text-muted"></i></span>
-                                    <input type="number" step="0.01" name="TDS" id="tdsAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("TDS", $editTrip) : "0.00" ?>" placeholder="0.00">
-                                </div>
+
                             </div>
 
-                            <div class="sec-badge mt-1" style="background:#fef9c3;color:#78350f;"><i class="ri-percent-line"></i>Commission</div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Commission Amount (Rs.) <span class="badge bg-warning text-dark ms-1" style="font-size:9px;">Agent ← Owner</span></label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-percent-line" style="color:#d97706;"></i></span>
-                                    <input type="number" step="0.01" name="CommissionAmount" id="commAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? number_format($editCommission, 2, '.', '') : "0.00" ?>" placeholder="0.00">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">TDS (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-government-line text-muted"></i></span>
+                                            <input type="number" step="0.01" name="TDS" id="tdsAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("TDS", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Commission Amount (Rs.) </label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-percent-line" style="color:#d97706;"></i></span>
+                                            <input type="number" step="0.01" name="CommissionAmount" id="commAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? number_format($editCommission, 2, '.', '') : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="form-text fs-11"><i class="ri-information-line"></i> Commission Agent ko milegi, Owner se recover hogi</div>
+
+
                             </div>
+
 
                             <!-- Summary -->
                             <div class="summary-box">
@@ -638,12 +658,7 @@ require_once "../layout/sidebar.php";
                             <button type="submit" class="btn btn-warning fw-bold btn-lg text-dark" id="saveBtn" style="border-radius:10px;">
                                 <i class="ri-save-line me-1"></i><?= $isEdit ? "Update Trip" : "Save Trip" ?>
                             </button>
-                            <?php if ($isEdit): ?>
-                                <button type="button" class="btn btn-outline-dark fw-semibold" style="border-radius:10px;"
-                                    onclick="window.open('GCNote_print.php?TripId=<?= $tripId ?>','_blank','width=950,height=720')">
-                                    <i class="ri-printer-line me-1"></i>Print GC Note
-                                </button>
-                            <?php endif; ?>
+
                             <a href="AgentTrips.php" class="btn btn-outline-secondary" style="border-radius:10px;">
                                 <i class="ri-close-line me-1"></i>Cancel
                             </a>
@@ -731,17 +746,17 @@ require_once "../layout/sidebar.php";
     }
 
     function calcTotal() {
-        var fr   = f("#freightAmt"),
-            la   = f("#labourAmt"),
-            ho   = f("#holdingAmt"),
-            ot   = f("#otherAmt");
+        var fr = f("#freightAmt"),
+            la = f("#labourAmt"),
+            ho = f("#holdingAmt"),
+            ot = f("#otherAmt");
         var cash = f("#cashAdv"),
-            onl  = f("#onlineAdv"),
-            td   = f("#tdsAmt"),
+            onl = f("#onlineAdv"),
+            td = f("#tdsAmt"),
             comm = f("#commAmt");
-        var adv   = cash + onl;
+        var adv = cash + onl;
         var total = fr + la + ho + ot;
-        var net   = total - adv - td;
+        var net = total - adv - td;
         $("#sum_freight").text(rupee(fr));
         $("#sum_labour").text(rupee(la));
         $("#sum_holding").text(rupee(ho));

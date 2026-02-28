@@ -292,7 +292,7 @@ require_once "../layout/sidebar.php";
                 </div>
             </div>
             <div class="d-flex gap-2 flex-wrap">
-               
+
                 <a href="RegularTrips.php" class="btn btn-outline-light fw-semibold" style="border-radius:9px;height:38px;font-size:13px;">
                     <i class="ri-arrow-left-line me-1"></i> Back
                 </a>
@@ -379,7 +379,7 @@ require_once "../layout/sidebar.php";
                                             value="<?= $isEdit ? fv("ConsigneeContactNo", $editTrip) : "" ?>" placeholder="10 digits">
                                     </div>
                                 </div>
-                                 <div class="col-md-4">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">Consignee City</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-map-pin-line"></i></span>
@@ -420,22 +420,22 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Driver Name</label>
                                     <input type="text" name="DriverName" class="form-control" value="<?= $isEdit ? fv("DriverName", $editTrip) : "" ?>" placeholder="Full name">
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Contact No</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-phone-line"></i></span>
                                         <input type="text" name="DriverContactNo" class="form-control" maxlength="10" value="<?= $isEdit ? fv("DriverContactNo", $editTrip) : "" ?>" placeholder="10 digits">
                                     </div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Aadhar No</label>
                                     <input type="text" name="DriverAadharNo" class="form-control" maxlength="12" value="<?= $isEdit ? fv("DriverAadharNo", $editTrip) : "" ?>" placeholder="12 digits">
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">Driver Address</label>
                                     <input type="text" name="DriverAddress" class="form-control" value="<?= $isEdit ? fv("DriverAddress", $editTrip) : "" ?>" placeholder="Address">
                                 </div>
@@ -536,21 +536,29 @@ require_once "../layout/sidebar.php";
 
                             <div class="sec-badge mt-1"><i class="ri-add-circle-line"></i>Extra Charges</div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Labour Charge (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-user-line text-muted"></i></span>
-                                    <input type="number" step="0.01" name="LabourCharge" id="labourAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("LabourCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Labour Charge (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-user-line text-muted"></i></span>
+                                            <input type="number" step="0.01" name="LabourCharge" id="labourAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("LabourCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Holding / Detention (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-time-line text-muted"></i></span>
+                                            <input type="number" step="0.01" name="HoldingCharge" id="holdingAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("HoldingCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
                                 </div>
+
+
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Holding / Detention (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-time-line text-muted"></i></span>
-                                    <input type="number" step="0.01" name="HoldingCharge" id="holdingAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("HoldingCharge", $editTrip) : "0.00" ?>" placeholder="0.00">
-                                </div>
-                            </div>
+
+
                             <div class="mb-3">
                                 <label class="form-label fw-semibold fs-13">Other Charge (Rs.)</label>
                                 <div class="row g-2">
@@ -567,38 +575,50 @@ require_once "../layout/sidebar.php";
 
                             <div class="sec-badge mt-1"><i class="ri-subtract-line"></i>Deductions</div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Cash Advance (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-money-rupee-circle-line text-warning"></i></span>
-                                    <input type="number" step="0.01" name="CashAdvance" id="cashAdvAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("CashAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Cash Advance (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-money-rupee-circle-line text-warning"></i></span>
+                                            <input type="number" step="0.01" name="CashAdvance" id="cashAdvAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("CashAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Online Advance (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-bank-card-line text-info"></i></span>
+                                            <input type="number" step="0.01" name="OnlineAdvance" id="onlineAdvAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("OnlineAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
                                 </div>
+
+
                             </div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Online Advance (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-bank-card-line text-info"></i></span>
-                                    <input type="number" step="0.01" name="OnlineAdvance" id="onlineAdvAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("OnlineAdvance", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">TDS (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-government-line text-muted"></i></span>
+                                            <input type="number" step="0.01" name="TDS" id="tdsAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("TDS", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label fw-semibold fs-13">Commission Amount (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-percent-line text-primary"></i></span>
+                                            <input type="number" step="0.01" name="CommissionAmount" id="commAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("CommissionAmount", $editTrip) : "0.00" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
                                 </div>
+
+
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">TDS (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-government-line text-muted"></i></span>
-                                    <input type="number" step="0.01" name="TDS" id="tdsAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("TDS", $editTrip) : "0.00" ?>" placeholder="0.00">
-                                </div>
-                            </div>
-                            <!-- Commission — Regular trips only -->
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold fs-13">Commission Amount (Rs.)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light"><i class="ri-percent-line text-primary"></i></span>
-                                    <input type="number" step="0.01" name="CommissionAmount" id="commAmt" class="form-control charge-input" min="0"
-                                        value="<?= $isEdit ? fm("CommissionAmount", $editTrip) : "0.00" ?>" placeholder="0.00">
-                                </div>
-                            </div>
+
 
                             <!-- Summary -->
                             <div class="summary-box">
