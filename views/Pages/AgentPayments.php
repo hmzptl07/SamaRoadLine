@@ -277,7 +277,7 @@ function apRow($t, $i) {
                 </button>
                 <?php endif; ?>
                 <button class="btn btn-outline-info btn-ic" title="History"
-                    onclick="viewHist(<?= $t['TripId'] ?>,'<?= addslashes($t['VehicleNumber']??'—') ?>','<?= addslashes($t['AgentName']??'') ?>')">
+                    onclick="viewHist(<?= $t['TripId'] ?>,'<?= addslashes($t['VehicleNumber']??'—') ?>','<?= addslashes($t['AgentName']??'') ?>','<?= $t['PaymentStatus'] ?>')">
                     <i class="ri-history-line"></i>
                 </button>
             </div>
@@ -544,7 +544,7 @@ function submitPay(){
     }).catch(()=>Swal.fire({icon:'error',title:'Server Error'}));
 }
 
-function viewHist(tripId,vehicle,agent){
+function viewHist(tripId,vehicle,agent,payStatus){
     $('#hist_label').text('Trip #'+tripId+' — '+vehicle+' ('+agent+')');
     $('#histBody').html('<tr><td colspan="8" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></td></tr>');
     new bootstrap.Modal('#histModal').show();
@@ -562,8 +562,8 @@ function viewHist(tripId,vehicle,agent){
                 +'<td class="text-end fw-bold text-success">₹'+parseFloat(p.Amount).toFixed(2)+'</td>'
                 +'<td><small>'+(p.Remarks||'—')+'</small></td>'
                 +'<td><small class="text-muted">'+(p.CreatedDate?p.CreatedDate.substring(0,16):'—')+'</small></td>'
-                +'<td><button class="btn btn-sm btn-outline-danger btn-ic" onclick="delPay('+p.PaymentId+')">'
-                +'<i class="ri-delete-bin-line"></i></button></td></tr>';
+                +'<td>'+(payStatus!=='Paid'?'<button class="btn btn-sm btn-outline-danger btn-ic" onclick="delPay('+p.PaymentId+')"><i class="ri-delete-bin-line"></i></button>':'<span class="text-muted" title="Fully paid — cannot delete"><i class="ri-lock-line"></i></span>')+'</td>'
+                +'</tr>';
         });
         $('#histBody').html(html);
         $('#histTotal').text('₹'+total.toFixed(2));

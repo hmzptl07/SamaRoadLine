@@ -36,17 +36,7 @@
   endDate.setDate(today.getDate() + 30); // Add 30 days
   const endDateFormatted = endDate.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
-  flatpickr("#daterange", {
-    mode: "range",
-    dateFormat: "Y-m-d",
-    defaultDate: [startDate, endDateFormatted],
-    onReady: function (selectedDates, dateStr, instance) {
-      updateInputDisplay([startDate, endDateFormatted], instance);
-    },
-    onChange: function (selectedDates, dateStr, instance) {
-      updateInputDisplay(selectedDates, instance);
-    }
-  });
+
 
   // Function to update the input display with formatted date range
   function updateInputDisplay(dates, instance) {
@@ -467,7 +457,7 @@
       }
     }
   });
-})();
+});
 
 /* full screen */
 var elem = document.documentElement;

@@ -369,7 +369,7 @@ require_once "../layout/sidebar.php";
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">Consignee Name <small class="text-muted fw-normal">(Receiver)</small></label>
                                     <input type="text" name="ConsigneeName" class="form-control"
-                                        value="<?= $isEdit ? fv("ConsigneeName", $editTrip) : "" ?>" placeholder="Consignee ka naam">
+                                        value="<?= $isEdit ? fv("ConsigneeName", $editTrip) : "" ?>" placeholder="Full Name">
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">Consignee Contact No.</label>
@@ -390,7 +390,7 @@ require_once "../layout/sidebar.php";
                                 <div class="col-md-8">
                                     <label class="form-label fw-semibold fs-13">Consignee Address</label>
                                     <input type="text" name="ConsigneeAddress" class="form-control"
-                                        value="<?= $isEdit ? fv("ConsigneeAddress", $editTrip) : "" ?>" placeholder="Consignee ka pata">
+                                        value="<?= $isEdit ? fv("ConsigneeAddress", $editTrip) : "" ?>" placeholder="Full Address">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label fw-semibold fs-13">From Location</label>
