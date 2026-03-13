@@ -187,7 +187,6 @@ class BillPayment {
             FROM TripMaster t
             LEFT JOIN VehicleMaster  v   ON t.VehicleId  = v.VehicleId
             LEFT JOIN PartyMaster    p1  ON t.ConsignerId = p1.PartyId
-            LEFT JOIN PartyMaster    p2  ON t.ConsigneeId = p2.PartyId
             LEFT JOIN PartyMaster    p3  ON t.AgentId     = p3.PartyId
             LEFT JOIN TripCommission tc  ON t.TripId      = tc.TripId AND tc.RecoveryFrom='Owner'
             WHERE t.FreightPaymentToOwnerStatus = 'PaidDirectly'

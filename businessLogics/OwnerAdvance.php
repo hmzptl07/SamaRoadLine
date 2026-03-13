@@ -57,17 +57,30 @@ class OwnerAdvance {
         $stmt = $pdo->prepare("
             SELECT
                 t.TripId, t.TripDate, t.FromLocation, t.ToLocation,
-                t.FreightAmount, t.AdvanceAmount, t.TDS,
+                t.FreightAmount,
+                COALESCE(t.LabourCharge,  0) AS LabourCharge,
+                COALESCE(t.HoldingCharge, 0) AS HoldingCharge,
+                COALESCE(t.OtherCharge,   0) AS OtherCharge,
+                COALESCE(t.TDS,           0) AS TDS,
+                COALESCE(tc.CommissionAmount, 0) AS Commission,
                 t.OwnerPaymentStatus,
                 v.VehicleNumber,
-                GREATEST(0, t.FreightAmount - t.AdvanceAmount - t.TDS)  AS NetPayable,
-                COALESCE(SUM(op.Amount), 0)                             AS Paid
+                GREATEST(0,
+                    t.FreightAmount
+                    + COALESCE(t.LabourCharge,  0)
+                    + COALESCE(t.HoldingCharge, 0)
+                    + COALESCE(t.OtherCharge,   0)
+                    + COALESCE(t.TDS,           0)
+                    - COALESCE(tc.CommissionAmount, 0)
+                ) AS NetPayable,
+                COALESCE(SUM(op.Amount), 0) AS Paid
             FROM TripMaster t
             JOIN VehicleMaster      v   ON t.VehicleId      = v.VehicleId
+            LEFT JOIN TripCommission tc  ON t.TripId         = tc.TripId
             LEFT JOIN ownerpayment  op  ON t.TripId         = op.TripId
             WHERE v.VehicleOwnerId = ?
               AND t.OwnerPaymentStatus != 'Paid'
-              AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus = 'Pending')
+              AND COALESCE(t.FreightPaymentToOwnerStatus, 'Pending') != 'PaidDirectly'
             GROUP BY t.TripId
             ORDER BY t.TripDate DESC
         ");
@@ -201,12 +214,20 @@ class OwnerAdvance {
     private static function recalcTripStatus(int $tripId, PDO $pdo): void {
         $r = $pdo->prepare("
             SELECT
-                GREATEST(0, t.FreightAmount - t.AdvanceAmount - t.TDS) AS NetPayable,
+                GREATEST(0,
+                    t.FreightAmount
+                    + COALESCE(t.LabourCharge,  0)
+                    + COALESCE(t.HoldingCharge, 0)
+                    + COALESCE(t.OtherCharge,   0)
+                    + COALESCE(t.TDS,           0)
+                    - COALESCE(tc.CommissionAmount, 0)
+                ) AS NetPayable,
                 COALESCE(SUM(op.Amount), 0) AS Paid
             FROM TripMaster t
-            LEFT JOIN ownerpayment op ON t.TripId = op.TripId
+            LEFT JOIN TripCommission tc ON tc.TripId = t.TripId
+            LEFT JOIN ownerpayment   op ON op.TripId = t.TripId
             WHERE t.TripId = ?
-            GROUP BY t.TripId
+            GROUP BY t.TripId, tc.CommissionAmount
         ");
         $r->execute([$tripId]);
         $rv = $r->fetch(PDO::FETCH_ASSOC);

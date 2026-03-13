@@ -556,6 +556,7 @@ body {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/Sama_Roadlines/assets/js/validation.js"></script>
 <script>
 // ── Password Toggle
 document.getElementById('pwToggle').addEventListener('click', function () {
@@ -572,34 +573,28 @@ document.getElementById('pwToggle').addEventListener('click', function () {
   }
 });
 
-// ── Form Validation + Submit State
+// ── Form Validation + Submit State (SRV)
 document.getElementById('loginForm').addEventListener('submit', function (e) {
-  var user = document.getElementById('signin-username').value.trim();
-  var pass = document.getElementById('signin-password').value.trim();
-  var errU = document.getElementById('err-username');
-  var errP = document.getElementById('err-password');
-  var valid = true;
+  e.preventDefault();
 
-  errU.style.display = 'none';
-  errP.style.display = 'none';
+  var valid = SRV.validate('#loginForm', {
+    'signin-username': { required: [true, 'Username is required.'] },
+    'signin-password': { required: [true, 'Password is required.'], minLength: [3, 'Password too short.'] }
+  });
 
-  if (!user) { errU.style.display = 'block'; valid = false; }
-  if (!pass) { errP.style.display = 'block'; valid = false; }
-
-  if (!valid) { e.preventDefault(); return; }
+  if (!valid) return;
 
   // Show loading state
   document.getElementById('btnText').style.display    = 'none';
   document.getElementById('btnLoading').style.display = 'flex';
   document.getElementById('submitBtn').disabled = true;
+  this.submit();
 });
 
-// ── Clear errors on input
-document.getElementById('signin-username').addEventListener('input', function () {
-  document.getElementById('err-username').style.display = 'none';
-});
-document.getElementById('signin-password').addEventListener('input', function () {
-  document.getElementById('err-password').style.display = 'none';
+// ── Live validation on input
+SRV.bindLive('#loginForm', {
+  'signin-username': { required: [true, 'Username is required.'] },
+  'signin-password': { required: [true, 'Password is required.'], minLength: [3, 'Password too short.'] }
 });
 
 // ── Input focus: highlight icon

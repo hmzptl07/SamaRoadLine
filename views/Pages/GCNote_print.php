@@ -42,7 +42,14 @@ $advance  = floatval($t['AdvanceAmount'] ?? 0);
 $tds      = floatval($t['TDS'] ?? 0);
 $total    = $freight + $labour + $holding + $other;
 $net      = $total - $advance - $tds;
-$totalWt  = array_sum(array_column($materials, 'Weight'));
+$totalWt = 0;
+foreach ($materials as $mat) {
+    if (($mat['MaterialType'] ?? 'Loose') === 'Units') {
+        $totalWt += floatval($mat['TotalWeight'] ?? 0);
+    } else {
+        $totalWt += floatval($mat['Weight'] ?? 0);
+    }
+}
 $matValue = floatval($t['MaterialTotalValue'] ?? 0);
 $lrNo     = str_pad($tripId, 4, '0', STR_PAD_LEFT);
 $maxRows  = max(count($materials), 5);
@@ -94,7 +101,7 @@ $maxRows  = max(count($materials), 5);
     }
 
     .page {
-      width: 210mm;
+      width: 277mm;
       margin: 6px auto;
       border: 2.5px solid #000;
       background: #fff;
@@ -178,7 +185,7 @@ $maxRows  = max(count($materials), 5);
     }
 
     .ib-value {
-      font-size: 12px;
+      font-size: 14px;
       font-weight: bold;
     }
 
@@ -227,7 +234,7 @@ $maxRows  = max(count($materials), 5);
     }
 
     .party-name {
-      font-size: 13px;
+      font-size: 15px;
       font-weight: bold;
     }
 
@@ -274,23 +281,23 @@ $maxRows  = max(count($materials), 5);
     .mat-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 9.5px;
+      font-size: 11px;
     }
 
     .mat-table th {
       border: 1px solid #000;
-      padding: 2px 3px;
+      padding: 3px 4px;
       text-align: center;
       background: #e8e8e8;
       font-weight: bold;
-      font-size: 9px;
+      font-size: 10px;
     }
 
     .mat-table td {
       border: 1px solid #000;
-      padding: 0 3px;
+      padding: 0 4px;
       text-align: center;
-      height: 19px;
+      height: 20px;
     }
 
     .mat-table .desc {
@@ -336,7 +343,7 @@ $maxRows  = max(count($materials), 5);
     /* CHARGES */
     .bottom-row {
       display: grid;
-      grid-template-columns: 1fr 210px;
+      grid-template-columns: 1fr 270px;
       border-bottom: 1.5px solid #000;
     }
 
@@ -415,11 +422,12 @@ $maxRows  = max(count($materials), 5);
       .page {
         margin: 0;
         border: 2px solid #000;
+        width: 100%;
       }
 
       @page {
         margin: 4mm;
-        size: A4 portrait;
+        size: A4 landscape;
       }
     }
   </style>
@@ -526,11 +534,11 @@ $maxRows  = max(count($materials), 5);
       <table class="mat-table">
         <thead>
           <tr>
-            <th width="44">Qty.<br>(Ton)</th>
+            <th width="70">Qty / Weight</th>
             <th class="desc">Said to Contain (Goods Description)</th>
             <th width="52">Rate<br>Rs.</th>
             <th width="42">Rate<br>Ps.</th>
-            <th width="72">Actual Wt.<br>Kgs</th>
+            <th width="80">Actual Wt.<br>Kgs</th>
             <th width="60">Freight<br>Rs.</th>
             <th width="50">Freight<br>Ps.</th>
           </tr>
@@ -538,21 +546,42 @@ $maxRows  = max(count($materials), 5);
         <tbody>
           <?php
           for ($i = 0; $i < $maxRows; $i++):
-            $mat = $materials[$i] ?? null;
-            $wKg = $mat ? round(floatval($mat['Weight']) * 1000) : '';
-            $rRs = $mat ? floor(floatval($mat['Rate'])) : '';
-            $rPs = $mat ? round((floatval($mat['Rate']) - floor(floatval($mat['Rate']))) * 100) : '';
-            $aRs = $mat ? floor(floatval($mat['Amount'])) : '';
-            $aPs = $mat ? round((floatval($mat['Amount']) - floor(floatval($mat['Amount']))) * 100) : '';
+            $mat    = $materials[$i] ?? null;
+            $isU    = $mat && ($mat['MaterialType'] ?? 'Loose') === 'Units';
+            // Qty/Weight display in first column
+            if ($mat) {
+                if ($isU) {
+                    $qty     = intval($mat['Quantity'] ?? 0);
+                    $utype   = $mat['UnitType'] ?? 'unit';
+                    $qtyDisp = $qty . ' ' . $utype;
+                    $actWtKg = round(floatval($mat['TotalWeight'] ?? 0) * 1000);
+                } else {
+                    $qtyDisp = number_format(floatval($mat['Weight']), 3) . ' T';
+                    $actWtKg = round(floatval($mat['Weight']) * 1000);
+                }
+                $rRs = floor(floatval($mat['Rate']));
+                $rPs = round((floatval($mat['Rate']) - $rRs) * 100);
+                $aRs = floor(floatval($mat['Amount']));
+                $aPs = round((floatval($mat['Amount']) - $aRs) * 100);
+            }
           ?>
             <tr>
-              <td><?= $mat ? s($mat['Weight']) . 'T' : '' ?></td>
-              <td class="desc"><?= $mat ? s($mat['MaterialName']) : '' ?></td>
+              <td style="font-size:10px;"><?= $mat ? $qtyDisp : '' ?></td>
+              <td class="desc">
+                <?php if ($mat): ?>
+                  <?= s($mat['MaterialName']) ?>
+                  <?php if ($isU): ?>
+                    <span style="font-size:9px;color:#555;">
+                      (<?= intval($mat['Quantity']) ?> × <?= round(floatval($mat['WeightPerUnit'])*1000,1) ?>kg = <?= number_format(floatval($mat['TotalWeight']),3) ?>T)
+                    </span>
+                  <?php endif; ?>
+                <?php endif; ?>
+              </td>
               <td><?= $mat ? $rRs : '' ?></td>
-              <td><?= $mat ? $rPs : '' ?></td>
-              <td><?= $mat ? $wKg : '' ?></td>
+              <td><?= $mat ? ($rPs > 0 ? str_pad($rPs,2,'0',STR_PAD_LEFT) : '—') : '' ?></td>
+              <td><?= $mat ? number_format($actWtKg, 0) : '' ?></td>
               <td><?= $mat ? $aRs : '' ?></td>
-              <td><?= $mat ? $aPs : '' ?></td>
+              <td><?= $mat ? ($aPs > 0 ? str_pad($aPs,2,'0',STR_PAD_LEFT) : '—') : '' ?></td>
             </tr>
           <?php endfor; ?>
         </tbody>
@@ -566,11 +595,15 @@ $maxRows  = max(count($materials), 5);
       </table>
     </div>
 
-    <!-- INVOICE NO + MATERIAL VALUE bar (always visible) -->
-    <div class="inv-val-bar">
+    <!-- INVOICE NO + DATE + MATERIAL VALUE bar -->
+    <div class="inv-val-bar" style="grid-template-columns:1fr 1fr 1fr;">
       <div class="inv-val-cell">
         <label>Party Invoice No. :</label>
         <span><?= !empty($t['InvoiceNo']) ? s($t['InvoiceNo']) : '—' ?></span>
+      </div>
+      <div class="inv-val-cell" style="border-right:1px solid #ccc;">
+        <label>Invoice Date :</label>
+        <span><?= !empty($t['InvoiceDate']) ? date('d/m/Y', strtotime($t['InvoiceDate'])) : '—' ?></span>
       </div>
       <div class="inv-val-cell">
         <label>Material Value :</label>

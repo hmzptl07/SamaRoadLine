@@ -81,6 +81,45 @@ if ($tripId > 0) {
 $isEdit    = $editTrip !== null;
 $pageTitle = $isEdit ? "Edit Agent Trip #$tripId" : "New Agent Trip";
 
+// ── Lock check ──
+if ($isEdit) {
+    $ownerPaid = false;
+    $agentPaid = false;
+    if ($tripId > 0) {
+        $chk1 = $pdo->prepare("SELECT COUNT(*) FROM ownerpayment WHERE TripId = ?");
+        $chk1->execute([$tripId]);
+        $ownerPaid = $chk1->fetchColumn() > 0;
+
+        $chk2 = $pdo->prepare("SELECT COUNT(*) FROM agentpayment WHERE TripId = ?");
+        $chk2->execute([$tripId]);
+        $agentPaid = $chk2->fetchColumn() > 0;
+    }
+    // Commission received?
+    $commLock = false;
+    if ($tripId > 0) {
+        $chk3 = $pdo->prepare("SELECT COUNT(*) FROM tripcommission WHERE TripId = ? AND CommissionStatus = 'Received'");
+        $chk3->execute([$tripId]);
+        $commLock = $chk3->fetchColumn() > 0;
+    }
+    // Vasuli received?
+    $vasuliLock = false;
+    if ($tripId > 0) {
+        $chk4 = $pdo->prepare("SELECT COUNT(*) FROM tripvasuli WHERE TripId = ? AND VasuliStatus = 'Received'");
+        $chk4->execute([$tripId]);
+        $vasuliLock = $chk4->fetchColumn() > 0;
+    }
+    if ($ownerPaid || $agentPaid || $commLock || $vasuliLock) {
+        if ($ownerPaid)     $reason = 'owner_paid';
+        elseif ($agentPaid) $reason = 'agent_paid';
+        elseif ($commLock)  $reason = 'commission_received';
+        else                $reason = 'vasuli_received';
+        $ref = $_SERVER['HTTP_REFERER'] ?? '';
+        $back = (strpos($ref, 'DirectTrips') !== false) ? 'DirectTrips.php' : 'AgentTrips.php';
+        header("Location: {$back}?locked=1&reason={$reason}");
+        exit();
+    }
+}
+
 $parties        = Party::getAll();
 $vehicles       = Vehicle::getAll();
 $agents         = array_filter($parties,  fn($p) => $p["PartyType"] === "Agent" && $p["IsActive"] === "Yes");
@@ -244,27 +283,125 @@ require_once "../layout/sidebar.php";
         text-align: center;
     }
 
+    /* ══════════════════════════════════════
+       MATERIAL SECTION — Complete Redesign
+    ══════════════════════════════════════ */
+    /* ══ Material Table ══ */
+    .mat-wrap {
+        background: #fff;
+        border: 1px solid #fde68a;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(146,64,14,.1);
+        margin-bottom: 0;
+    }
+    .mat-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 13px 20px;
+        background: linear-gradient(135deg, #92400e 0%, #d97706 100%);
+    }
+    .mat-header-title { display:flex;align-items:center;gap:10px;color:#fff;font-size:15px;font-weight:700; }
+    .mat-header-title i { font-size:18px;opacity:.9; }
+    .mat-header-stats { display:flex;gap:18px;align-items:center; }
+    .mat-stat { text-align:center;color:rgba(255,255,255,.75);font-size:11px; }
+    .mat-stat strong { display:block;color:#fff;font-size:14px;font-weight:700; }
+    .mat-stat-sep { width:1px;height:30px;background:rgba(255,255,255,.2); }
+    .btn-add-mat {
+        display:flex;align-items:center;gap:6px;padding:7px 16px;
+        background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.35);
+        border-radius:10px;color:#fff;font-size:12.5px;font-weight:600;
+        cursor:pointer;transition:all .18s;
+    }
+    .btn-add-mat:hover { background:rgba(255,255,255,.28);transform:translateY(-1px); }
+    #matTable { width:100%;border-collapse:collapse; }
+    #matTable thead tr { background:#fffbeb;border-bottom:2px solid #fde68a; }
     #matTable thead th {
-        background: #92400e;
-        color: #fff;
-        font-size: 11.5px;
-        padding: 8px 10px;
-        border: none;
+        font-size:10.5px;font-weight:700;color:#92400e;
+        text-transform:uppercase;letter-spacing:.6px;padding:9px 12px;white-space:nowrap;
     }
+    #matTable tbody tr { border-bottom:1px solid #fef3c7;transition:background .12s; }
+    #matTable tbody tr:last-child { border-bottom:none; }
+    #matTable tbody tr:hover { background:#fffdf0; }
+    #matTable tbody td { padding:6px 10px;vertical-align:middle; }
+    #matTable tbody tr { position:relative; }
+    #matTable tbody tr td:first-child { padding-left:18px; }
+    #matTable tbody tr::before {
+        content:'';position:absolute;left:0;top:8px;bottom:8px;
+        width:3px;border-radius:0 3px 3px 0;background:#fcd34d;
+    }
+    #matTable tbody tr.is-units::before { background:#6ee7b7; }
+    .mat-num {
+        width:22px;height:22px;border-radius:50%;
+        background:#fef3c7;color:#92400e;
+        font-size:11px;font-weight:700;
+        display:inline-flex;align-items:center;justify-content:center;
+    }
+    .det-loose {
+        display:inline-block;
+        background:linear-gradient(135deg,#fef3c7,#fde68a);
+        color:#92400e;font-weight:700;font-size:14px;
+        padding:4px 12px;border-radius:8px;
+        border:1px solid #fcd34d;letter-spacing:.3px;
+        min-width:80px;text-align:center;
+    }
+    .det-units {
+        display:inline-block;font-size:12.5px;font-weight:500;color:#374151;
+        background:#fffbeb;border:1px solid #fde68a;
+        padding:4px 10px;border-radius:8px;white-space:nowrap;
+    }
+    .det-units .du-qty  { font-weight:700;color:#92400e; }
+    .det-units .du-unit { font-weight:600;color:#d97706;margin:0 2px; }
+    .det-units .du-op   { color:#94a3b8;margin:0 4px;font-size:12px; }
+    .det-units .du-kg   { color:#374151; }
+    .det-units .du-tot  { font-weight:700;color:#15803d;margin-left:4px; }
+    .amt-td {
+        background:linear-gradient(135deg,#fffbeb,#fef3c7);
+        border-radius:8px;font-weight:700;color:#92400e;font-size:13px;
+        text-align:right;padding:7px 10px !important;
+        border:1px solid #fcd34d;white-space:nowrap;
+    }
+    .mat-edit-btn, .mat-del-btn {
+        width:28px;height:28px;border-radius:7px;
+        display:inline-flex;align-items:center;justify-content:center;
+        border:1.5px solid;cursor:pointer;transition:all .15s;
+    }
+    .mat-edit-btn { background:#fffbeb;border-color:#fde68a;color:#d97706; }
+    .mat-edit-btn:hover { background:#fef3c7;transform:scale(1.1); }
+    .mat-del-btn  { background:#fff0f0;border-color:#fecaca;color:#ef4444;margin-left:4px; }
+    .mat-del-btn:hover  { background:#fee2e2;transform:scale(1.1); }
+    .mat-totals-bar {
+        display:flex;align-items:center;justify-content:flex-end;
+        gap:8px;padding:10px 16px;
+        background:linear-gradient(135deg,#fef3c7,#fde68a);
+        border-top:1.5px solid #fcd34d;
+    }
+    .mat-total-chip {
+        display:flex;align-items:center;gap:8px;background:#fff;
+        border:1.5px solid #fcd34d;border-radius:10px;padding:5px 14px;
+    }
+    .mat-total-chip label {
+        font-size:10.5px;font-weight:700;color:#92400e;
+        text-transform:uppercase;letter-spacing:.5px;margin:0;white-space:nowrap;
+    }
+    .mat-total-chip input {
+        width:120px;border:none !important;background:transparent !important;
+        font-weight:800;color:#92400e;font-size:14px;
+        text-align:right;padding:0;box-shadow:none !important;
+    }
+    /* Modal */
+    #matModal .modal-content { border:none;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(146,64,14,.25); }
+    #matModal .modal-header { background:linear-gradient(135deg,#92400e,#d97706);border:none;padding:16px 24px; }
+    #matModal .modal-title { color:#fff;font-weight:700;font-size:15px; }
+    #matModal .btn-close { filter:invert(1);opacity:.8; }
+    #matModal .modal-body { padding:24px; }
+    #matModal .modal-footer { border-top:1px solid #fde68a;padding:14px 24px;background:#fffbeb; }
+    .modal-type-seg { display:inline-flex;border-radius:10px;border:2px solid #fde68a;overflow:hidden;width:100%; }
+    .modal-type-btn { flex:1;padding:9px 0;font-size:13px;font-weight:700;border:none;background:#fffbeb;cursor:pointer;transition:all .18s;color:#64748b; }
+    .modal-type-btn.active-loose { background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e; }
+    .modal-type-btn.active-units { background:linear-gradient(135deg,#dcfce7,#bbf7d0);color:#15803d; }
+    .modal-field-label { font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px; }
 
-    #matTable tbody td {
-        padding: 5px 6px;
-        vertical-align: middle;
-    }
-
-    #matTable tfoot td {
-        background: #fffbeb;
-        font-weight: 700;
-    }
-
-    .charge-input {
-        font-weight: 600;
-    }
+    .charge-input { font-weight:600; }
 </style>
 
 <div class="main-content app-content">
@@ -314,11 +451,11 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div class="col-md-4">
+                                <div class="col-md-5">
                                     <label class="form-label fw-semibold fs-13">Trip Date <span class="req">*</span></label>
                                     <input type="date" name="TripDate" class="form-control" value="<?= $isEdit ? fv("TripDate", $editTrip) : date("Y-m-d") ?>">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-7">
                                     <label class="form-label fw-semibold fs-13">Vehicle <span class="req">*</span></label>
                                     <select name="VehicleId" id="sel_Vehicle" class="form-select">
                                         <option value="">-- Search Vehicle --</option>
@@ -329,20 +466,25 @@ require_once "../layout/sidebar.php";
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label fw-semibold fs-13">Invoice No.</label>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold fs-13">Party Invoice No.</label>
                                     <input type="text" name="InvoiceNo" class="form-control"
-                                        value="<?= $isEdit ? fv("InvoiceNo", $editTrip) : "" ?>" placeholder="Invoice no.">
+                                        value="<?= $isEdit ? fv("InvoiceNo", $editTrip) : "" ?>" placeholder="Party's invoice/bill no.">
                                 </div>
-
-                                <div class="col-md-4">
-                                    <label class="form-label fw-semibold fs-13">Owner Payment</label>
-                                    <select name="FreightPaymentToOwnerStatus" class="form-select">
-                                        <option value="Pending" <?= (!$isEdit || ($editTrip["FreightPaymentToOwnerStatus"] ?? "") === "Pending") ? "selected" : "" ?>>⏳ Pending</option>
-                                        <option value="PaidDirectly" <?= (($editTrip["FreightPaymentToOwnerStatus"] ?? "") === "PaidDirectly") ? "selected" : "" ?>>✅ Paid Directly</option>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-semibold fs-13">Invoice Date</label>
+                                    <input type="date" name="InvoiceDate" class="form-control"
+                                        value="<?= $isEdit ? fv("InvoiceDate", $editTrip) : "" ?>">
+                                </div>
+                                <div class="col-md-3">
+                                    <?php $fps = $isEdit ? ($editTrip['FreightType'] ?? 'Regular') : 'Regular'; ?>
+                                    <label class="form-label fw-semibold fs-13">Bhadu Type</label>
+                                    <select name="FreightType" id="freightTypeSelect" class="form-select fw-bold" onchange="toggleVasuli(this.value)">
+                                        <option value="Regular" <?= $fps==='Regular' ? 'selected' : '' ?> style="color:#1d4ed8;">🔵 Regular</option>
+                                        <option value="ToPay"   <?= $fps==='ToPay'   ? 'selected' : '' ?> style="color:#15803d;">🟡 ToPay</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label class="form-label fw-semibold fs-13">L.R. No. <span class="badge bg-warning text-dark ms-1" style="font-size:9px;">Agent</span></label>
                                     <input type="text" name="LRNo" class="form-control"
                                         value="<?= $isEdit ? fv("LRNo", $editTrip) : "" ?>" placeholder="LR number">
@@ -359,20 +501,39 @@ require_once "../layout/sidebar.php";
                         </div>
                         <div class="trip-card-body">
                             <div class="row g-3">
-                                <div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-semibold fs-13">Agent <span class="req">*</span></label>
-                                        <select name="AgentId" id="sel_Agent" class="form-select">
-                                            <option value="">-- Search Agent --</option>
-                                            <?php foreach ($agents as $p): ?>
-                                                <option value="<?= $p["PartyId"] ?>" <?= (($editTrip["AgentId"] ?? "") == $p["PartyId"]) ? "selected" : "" ?>>
-                                                    <?= htmlspecialchars($p["PartyName"]) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold fs-13">Agent <span class="req">*</span></label>
+                                    <select name="AgentId" id="sel_Agent" class="form-select">
+                                        <option value="">-- Search Agent --</option>
+                                        <?php foreach ($agents as $p): ?>
+                                            <option value="<?= $p["PartyId"] ?>" <?= (($editTrip["AgentId"] ?? "") == $p["PartyId"]) ? "selected" : "" ?>>
+                                                <?= htmlspecialchars($p["PartyName"]) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold fs-13">Consignee Name <small class="text-muted fw-normal">(Receiver)</small></label>
+                                    <input type="text" name="ConsigneeName" class="form-control"
+                                        value="<?= $isEdit ? fv("ConsigneeName", $editTrip) : "" ?>" placeholder="Full Name">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold fs-13">Consignee Contact No.</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light"><i class="ri-phone-line"></i></span>
+                                        <input type="text" name="ConsigneeContactNo" class="form-control" maxlength="10"
+                                            value="<?= $isEdit ? fv("ConsigneeContactNo", $editTrip) : "" ?>" placeholder="10 digits">
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold fs-13">Consignee City</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-light"><i class="ri-map-pin-line"></i></span>
+                                        <input type="text" name="ConsigneeCity" class="form-control"
+                                            value="<?= $isEdit ? fv("ConsigneeCity", $editTrip) : "" ?>" placeholder="City name">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">From Location</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-map-pin-2-line" style="color:#d97706;"></i></span>
@@ -380,7 +541,7 @@ require_once "../layout/sidebar.php";
                                             value="<?= $isEdit ? fv("FromLocation", $editTrip) : "" ?>" placeholder="e.g. Surat">
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label fw-semibold fs-13">To Location</label>
                                     <div class="input-group">
                                         <span class="input-group-text bg-light"><i class="ri-map-pin-line text-danger"></i></span>
@@ -423,66 +584,220 @@ require_once "../layout/sidebar.php";
                         </div>
                     </div>
 
-                    <!-- ④ Materials -->
-                    <div class="trip-card">
-                        <div class="trip-card-head">
-                            <div class="trip-card-title"><i class="ri-box-3-line" style="color:#64748b;"></i>Goods / Materials</div>
-                            <button type="button" class="btn btn-sm" onclick="addRow()"
-                                style="border-radius:7px;font-size:12px;padding:4px 12px;background:#92400e;color:#fff;border:none;">
-                                <i class="ri-add-line me-1"></i>Add Row
-                            </button>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table mb-0" id="matTable">
-                                <thead>
-                                    <tr>
-                                        <th class="ps-3">Material Name</th>
-                                        <th style="width:110px;" class="text-center">Weight (Ton)</th>
-                                        <th style="width:120px;" class="text-center">Rate (Rs./Ton)</th>
-                                        <th style="width:130px;" class="text-center">Amount (Rs.)</th>
-                                        <th style="width:44px;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="matBody">
-                                    <?php if (empty($materials)): ?>
-                                        <tr>
-                                            <td class="ps-3"><input type="text" name="MaterialName[]" class="form-control form-control-sm" placeholder="e.g. Wheat, Cement..."></td>
-                                            <td><input type="number" step="0.01" name="Weight[]" class="form-control form-control-sm wt text-center" min="0" placeholder="0.00"></td>
-                                            <td><input type="number" step="0.01" name="Rate[]" class="form-control form-control-sm rt text-center" min="0" placeholder="0.00"></td>
-                                            <td><input type="number" step="0.01" name="Amount[]" class="form-control form-control-sm amt text-center" style="background:#fffbeb;" readonly></td>
-                                            <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="delRow(this)" style="width:30px;height:30px;padding:0;"><i class="ri-delete-bin-line" style="font-size:13px;"></i></button></td>
-                                        </tr>
-                                        <?php else: foreach ($materials as $m): ?>
-                                            <tr>
-                                                <td class="ps-3"><input type="text" name="MaterialName[]" class="form-control form-control-sm" value="<?= htmlspecialchars($m["MaterialName"]) ?>"></td>
-                                                <td><input type="number" step="0.01" name="Weight[]" class="form-control form-control-sm wt text-center" value="<?= $m["Weight"] ?>"></td>
-                                                <td><input type="number" step="0.01" name="Rate[]" class="form-control form-control-sm rt text-center" value="<?= $m["Rate"] ?>"></td>
-                                                <td><input type="number" step="0.01" name="Amount[]" class="form-control form-control-sm amt text-center" value="<?= $m["Amount"] ?>" style="background:#fffbeb;" readonly></td>
-                                                <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="delRow(this)" style="width:30px;height:30px;padding:0;"><i class="ri-delete-bin-line" style="font-size:13px;"></i></button></td>
-                                            </tr>
-                                    <?php endforeach;
-                                    endif; ?>
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td class="ps-3 fw-bold text-end text-muted fs-12">Total:</td>
-                                        <td><input id="totWt" class="form-control form-control-sm fw-bold text-center" style="background:#fef3c7;border-color:#fcd34d;" readonly></td>
-                                        <td></td>
-                                        <td><input id="matAmt" class="form-control form-control-sm fw-bold text-center" style="background:#fef3c7;border-color:#fcd34d;" readonly></td>
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- ⑤ Remarks -->
+                    <!-- ④ Remarks -->
                     <div class="trip-card">
                         <div class="trip-card-head">
                             <div class="trip-card-title"><i class="ri-chat-1-line" style="color:#94a3b8;"></i>Remarks</div>
                         </div>
                         <div class="trip-card-body">
                             <textarea name="Remarks" class="form-control" rows="2" placeholder="Any notes or remarks..."><?= $isEdit ? fv("Remarks", $editTrip) : "" ?></textarea>
+                        </div>
+                    </div>
+
+                    <!-- ══ Materials ══ -->
+                    <div class="mat-wrap">
+
+                        <div class="mat-header">
+                            <div class="mat-header-title">
+                                <i class="ri-stack-line"></i>Goods / Materials
+                            </div>
+                            <div class="mat-header-stats">
+                                <div class="mat-stat"><strong id="hdr-rows">–</strong>Items</div>
+                                <div class="mat-stat-sep"></div>
+                                <div class="mat-stat"><strong id="hdr-wt">–</strong>Total Wt (T)</div>
+                                <div class="mat-stat-sep"></div>
+                                <div class="mat-stat"><strong id="hdr-amt">–</strong>Total Amt</div>
+                                <div class="mat-stat-sep"></div>
+                                <button type="button" class="btn-add-mat" onclick="openMatModal()">
+                                    <i class="ri-add-circle-line" style="font-size:15px;"></i>Add Material
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table id="matTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:36px;">#</th>
+                                        <th style="width:130px;">Material Name</th>
+                                        <th>Weight / Details</th>
+                                        <th style="width:105px;" class="text-end">Rate (Rs.)</th>
+                                        <th style="width:120px;" class="text-end">Amount (Rs.)</th>
+                                        <th style="width:68px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="matBody">
+                                <?php
+                                $matList = !empty($materials) ? $materials : [];
+                                $rn = 1;
+                                foreach ($matList as $m):
+                                    $isUnits = ($m['MaterialType'] ?? 'Loose') === 'Units';
+                                    $mName   = htmlspecialchars($m['MaterialName'] ?? '');
+                                    $mWt     = floatval($m['Weight'] ?? 0);
+                                    $mQty    = intval($m['Quantity'] ?? 0);
+                                    $mUnit   = htmlspecialchars($m['UnitType'] ?? '');
+                                    $mWpu    = floatval($m['WeightPerUnit'] ?? 0);
+                                    $mTw     = floatval($m['TotalWeight'] ?? 0);
+                                    $mRate   = floatval($m['Rate'] ?? 0);
+                                    $mAmt    = floatval($m['Amount'] ?? 0);
+                                    $mWpuKg  = round($mWpu * 1000, 3);
+                                    $mTwKg   = round($mTw * 1000, 1);
+                                ?>
+                                <tr class="<?= $isUnits ? 'is-units' : '' ?>"
+                                    data-name="<?= $mName ?>" data-type="<?= $isUnits?'Units':'Loose' ?>"
+                                    data-wt="<?= $mWt ?>" data-qty="<?= $mQty ?>" data-unit="<?= $mUnit ?>"
+                                    data-wpu="<?= $mWpu ?>" data-tw="<?= $mTw ?>"
+                                    data-rate="<?= $mRate ?>" data-amt="<?= $mAmt ?>">
+                                    <td><span class="mat-num"><?= $rn++ ?></span></td>
+                                    <td style="font-weight:600;color:#1e293b;"><?= $mName ?></td>
+                                    <td>
+                                        <?php if ($isUnits): ?>
+                                        <span class="det-units">
+                                            <span class="du-qty"><?= $mQty ?></span>
+                                            <span class="du-unit"><?= $mUnit ?: 'unit' ?></span>
+                                            <span class="du-op">×</span>
+                                            <span class="du-kg"><?= $mWpuKg ?> kg</span>
+                                            <span class="du-op">=</span>
+                                            <span class="du-kg"><?= number_format($mTwKg,1) ?> kg</span>
+                                            <span class="du-tot">(<?= number_format($mTw,3) ?> T)</span>
+                                        </span>
+                                        <?php else: ?>
+                                        <span class="det-loose"><?= number_format($mWt,3) ?> T</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="text-end" style="color:#374151;"><?= number_format($mRate,2) ?></td>
+                                    <td class="amt-td">₹&nbsp;<?= number_format($mAmt,2) ?></td>
+                                    <td>
+                                        <input type="hidden" name="MaterialName[]"    value="<?= $mName ?>">
+                                        <input type="hidden" name="MaterialType[]"    value="<?= $isUnits?'Units':'Loose' ?>">
+                                        <input type="hidden" name="Weight[]"          value="<?= $isUnits ? $mTw : $mWt ?>">
+                                        <input type="hidden" name="Quantity[]"        value="<?= $mQty ?>">
+                                        <input type="hidden" name="UnitType[]"        value="<?= $mUnit ?>">
+                                        <input type="hidden" name="WeightPerUnit[]"   value="<?= $mWpu ?>">
+                                        <input type="hidden" name="TotalWeight[]"     value="<?= $mTw ?>">
+                                        <input type="hidden" name="Rate[]"            value="<?= $mRate ?>">
+                                        <input type="hidden" name="Amount[]"          value="<?= $mAmt ?>">
+                                        <button type="button" class="mat-edit-btn" onclick="editRow(this)" title="Edit">
+                                            <i class="ri-pencil-line" style="font-size:12px;"></i>
+                                        </button>
+                                        <button type="button" class="mat-del-btn" onclick="delRow(this)" title="Delete">
+                                            <i class="ri-delete-bin-line" style="font-size:12px;"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="mat-totals-bar">
+                            <div class="mat-total-chip">
+                                <label>Total Weight (T)</label>
+                                <input id="totWt" class="form-control" readonly placeholder="0.000">
+                            </div>
+                            <div class="mat-total-chip" style="border-color:#fbbf24;background:linear-gradient(135deg,#fffbeb,#fef3c7);">
+                                <label>Total Amount</label>
+                                <input id="matAmt" class="form-control" readonly placeholder="₹ 0.00">
+                            </div>
+                        </div>
+
+                    </div><!-- /.mat-wrap -->
+
+                    <!-- ══ ADD/EDIT MATERIAL MODAL ══ -->
+                    <div class="modal fade" id="matModal" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-centered" style="max-width:480px;">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="matModalTitle">
+                                        <i class="ri-add-circle-line me-2"></i>Add Material
+                                    </h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <input type="hidden" id="matEditIdx" value="-1">
+                                    <div class="mb-3">
+                                        <div class="modal-field-label">Material Name</div>
+                                        <input type="text" id="m_name" class="form-control"
+                                            placeholder="e.g. Wheat, Rice, Cement...">
+                                    </div>
+                                    <div class="mb-3">
+                                        <div class="modal-field-label">Material Type</div>
+                                        <div class="modal-type-seg">
+                                            <button type="button" class="modal-type-btn active-loose"
+                                                id="typeBtnLoose" onclick="modalSetType('Loose')">
+                                                ⚖ Loose (by weight)
+                                            </button>
+                                            <button type="button" class="modal-type-btn"
+                                                id="typeBtnUnits" onclick="modalSetType('Units')">
+                                                📦 Units (bags/boxes)
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="looseFields">
+                                        <div class="mb-3">
+                                            <div class="modal-field-label">Weight (Tonnes)</div>
+                                            <div class="input-group">
+                                                <input type="number" id="m_wt" class="form-control form-control-lg"
+                                                    step="0.001" min="0" placeholder="0.000"
+                                                    style="font-size:20px;font-weight:700;text-align:center;"
+                                                    oninput="modalCalc()">
+                                                <span class="input-group-text" style="font-weight:700;color:#d97706;background:#fef3c7;border-color:#fcd34d;">T</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="unitsFields" style="display:none;">
+                                        <div class="row g-2 mb-3">
+                                            <div class="col-4">
+                                                <div class="modal-field-label">Quantity</div>
+                                                <input type="number" id="m_qty" class="form-control text-center"
+                                                    step="1" min="0" placeholder="0" oninput="modalCalc()">
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="modal-field-label">Unit (bag/box...)</div>
+                                                <input type="text" id="m_unit" class="form-control text-center"
+                                                    placeholder="bag" oninput="modalCalc()">
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="modal-field-label">Weight / Unit (kg)</div>
+                                                <input type="number" id="m_wpuKg" class="form-control text-center"
+                                                    step="0.001" min="0" placeholder="0.000" oninput="modalCalc()">
+                                            </div>
+                                        </div>
+                                        <div id="modalPreview" class="mb-3" style="display:none;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1.5px solid #fcd34d;border-radius:12px;padding:12px 16px;">
+                                            <div style="font-size:13px;color:#374151;margin-bottom:4px;" id="prevFormula"></div>
+                                            <div style="font-size:11px;color:#92400e;">Total Weight</div>
+                                            <div style="font-size:18px;font-weight:800;color:#15803d;" id="prevTw"></div>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <div class="modal-field-label">Rate (Rs. per Tonne)</div>
+                                            <div class="input-group">
+                                                <span class="input-group-text">₹</span>
+                                                <input type="number" id="m_rate" class="form-control"
+                                                    step="0.01" min="0" placeholder="0.00" oninput="modalCalc()">
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="modal-field-label">Amount (Auto)</div>
+                                            <div class="input-group">
+                                                <span class="input-group-text" style="background:#fffbeb;color:#92400e;font-weight:700;">₹</span>
+                                                <input type="text" id="m_amt" class="form-control"
+                                                    readonly placeholder="0.00"
+                                                    style="background:linear-gradient(135deg,#fffbeb,#fef3c7);font-weight:800;color:#92400e;font-size:15px;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-warning px-4 fw-bold" onclick="saveMatModal()"
+                                        style="background:linear-gradient(135deg,#d97706,#b45309);border:none;color:#fff;">
+                                        <i class="ri-save-line me-1"></i>
+                                        <span id="matModalSaveLabel">Add to List</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -595,6 +910,24 @@ require_once "../layout/sidebar.php";
                                         </div>
                                     </div>
                                 </div>
+                                <!-- Vasuli -->
+                                <div class="row g-2 mt-1">
+                                    <div class="col-7">
+                                        <label class="form-label fw-semibold fs-13">Vasuli Amount (Rs.)</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-light"><i class="ri-hand-coin-line" style="color:#15803d;"></i></span>
+                                            <input type="number" step="0.01" name="VasuliAmount" id="vasuliAmt" class="form-control charge-input" min="0"
+                                                value="<?= $isEdit ? fm("VasuliAmount", $editTrip) : "" ?>" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-5">
+                                        <label class="form-label fw-semibold fs-13">Recover From</label>
+                                        <select name="VasuliRecoverFrom" id="vasuliRecoverFrom" class="form-select">
+                                            <option value="Other" <?= ($isEdit && ($editTrip['RecoverFrom']??'')=='Other') ? 'selected' : '' ?>>Other</option>
+                                            <option value="Owner" <?= ($isEdit && ($editTrip['RecoverFrom']??'')=='Owner') ? 'selected' : '' ?>>Owner</option>
+                                        </select>
+                                    </div>
+                                </div>
 
 
                             </div>
@@ -667,8 +1000,10 @@ require_once "../layout/sidebar.php";
 
                 </div><!-- /col-xl-4 -->
             </div><!-- /row -->
+
         </form>
     </div>
+</div>
 </div>
 
 <script>
@@ -691,48 +1026,203 @@ require_once "../layout/sidebar.php";
         calcAll();
     });
 
-    // FreightAmount is always auto — no manual input
+    // ─── Material Modal Logic ───────────────────────────────────────
+    var matModalBS;
 
-    function addRow() {
-        $("#matBody").append(`<tr>
-        <td class="ps-3"><input type="text" name="MaterialName[]" class="form-control form-control-sm" placeholder="Material name..."></td>
-        <td><input type="number" step="0.01" name="Weight[]" class="form-control form-control-sm wt text-center" min="0" placeholder="0.00"></td>
-        <td><input type="number" step="0.01" name="Rate[]" class="form-control form-control-sm rt text-center" min="0" placeholder="0.00"></td>
-        <td><input type="number" step="0.01" name="Amount[]" class="form-control form-control-sm amt text-center" style="background:#fffbeb;" readonly></td>
-        <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="delRow(this)" style="width:30px;height:30px;padding:0;"><i class="ri-delete-bin-line" style="font-size:13px;"></i></button></td>
-    </tr>`);
+    /* ── Vasuli enable/disable based on FreightType (Bhadu Type) ── */
+    var _freightType = '<?= $fps ?>';
+
+    function toggleVasuli(type) {
+        var isRegular = (type !== 'ToPay');
+        $('#vasuliAmt').prop('disabled', isRegular);
+        $('#vasuliRecoverFrom').prop('disabled', isRegular);
+        $('#vasuliAmt').closest('.input-group').css('opacity', isRegular ? '0.45' : '1');
+        $('#vasuliRecoverFrom').css('opacity', isRegular ? '0.45' : '1');
+        if (isRegular) {
+            $('#vasuliAmt').val('');
+            updateSummary();
+        }
+    }
+
+    $(function() {
+        matModalBS = new bootstrap.Modal(document.getElementById("matModal"));
+        toggleVasuli(_freightType);
+    });
+
+    var mCurType = "Loose";
+
+    function openMatModal() {
+        $("#matModalTitle").html('<i class="ri-add-circle-line me-2"></i>Add Material');
+        $("#matModalSaveLabel").text("Add to List");
+        $("#matEditIdx").val("-1");
+        $("#m_name,#m_wt,#m_qty,#m_unit,#m_wpuKg,#m_rate,#m_amt").val("");
+        $("#modalPreview").hide();
+        modalSetType("Loose");
+        matModalBS.show();
+        setTimeout(function(){ $("#m_name").focus(); }, 400);
+    }
+
+    function editRow(btn) {
+        var tr  = $(btn).closest("tr");
+        var idx = $("#matBody tr").index(tr);
+        var d   = tr.data();
+        $("#matModalTitle").html('<i class="ri-pencil-line me-2"></i>Edit Material');
+        $("#matModalSaveLabel").text("Update");
+        $("#matEditIdx").val(idx);
+        $("#m_name").val(d.name || "");
+        $("#m_rate").val(d.rate || "");
+        modalSetType(d.type || "Loose");
+        if (d.type === "Units") {
+            $("#m_qty").val(d.qty || "");
+            $("#m_unit").val(d.unit || "");
+            var wpuKg = parseFloat(d.wpu || 0) * 1000;
+            $("#m_wpuKg").val(wpuKg > 0 ? wpuKg.toFixed(3) : "");
+        } else {
+            $("#m_wt").val(d.wt || "");
+        }
+        modalCalc();
+        matModalBS.show();
+    }
+
+    function modalSetType(type) {
+        mCurType = type;
+        if (type === "Loose") {
+            $("#typeBtnLoose").addClass("active-loose").removeClass("active-units");
+            $("#typeBtnUnits").removeClass("active-loose active-units");
+            $("#looseFields").show();
+            $("#unitsFields").hide();
+        } else {
+            $("#typeBtnUnits").addClass("active-units").removeClass("active-loose");
+            $("#typeBtnLoose").removeClass("active-loose active-units");
+            $("#looseFields").hide();
+            $("#unitsFields").show();
+        }
+        modalCalc();
+    }
+
+    function fmt(n, d) { return n.toLocaleString("en-IN", {minimumFractionDigits:d, maximumFractionDigits:d}); }
+
+    function modalCalc() {
+        var rate = parseFloat($("#m_rate").val()) || 0;
+        var amt = 0, tw = 0;
+        if (mCurType === "Units") {
+            var qty   = parseFloat($("#m_qty").val()) || 0;
+            var unit  = $("#m_unit").val().trim() || "unit";
+            var wpuKg = parseFloat($("#m_wpuKg").val()) || 0;
+            var wpuT  = wpuKg / 1000;
+            tw  = qty * wpuT;
+            var twKg = qty * wpuKg;
+            amt = tw * rate;
+            if (qty > 0 && wpuKg > 0) {
+                $("#prevFormula").html("<b>" + fmt(qty,0) + "</b> " + unit + " × <b>" + fmt(wpuKg,3) + " kg</b> = <b>" + fmt(twKg,1) + " kg</b>");
+                $("#prevTw").text(fmt(tw,3) + " T");
+                $("#modalPreview").show();
+            } else { $("#modalPreview").hide(); }
+        } else {
+            tw  = parseFloat($("#m_wt").val()) || 0;
+            amt = tw * rate;
+        }
+        $("#m_amt").val(amt > 0 ? "₹ " + fmt(amt,2) : "");
+    }
+
+    function saveMatModal() {
+        var name = $("#m_name").val().trim();
+        if (!name) { $("#m_name").focus(); return; }
+        var rate = parseFloat($("#m_rate").val()) || 0;
+        var wt=0, qty=0, unit="", wpuT=0, tw=0, amt=0, wpuKg=0;
+        if (mCurType === "Units") {
+            qty   = parseFloat($("#m_qty").val()) || 0;
+            unit  = $("#m_unit").val().trim();
+            wpuKg = parseFloat($("#m_wpuKg").val()) || 0;
+            wpuT  = wpuKg / 1000;
+            tw    = qty * wpuT;
+            amt   = tw * rate;
+        } else {
+            wt  = parseFloat($("#m_wt").val()) || 0;
+            amt = wt * rate;
+        }
+        var idx = parseInt($("#matEditIdx").val());
+        var detHtml;
+        if (mCurType === "Units") {
+            var twKg = qty * wpuKg;
+            detHtml = '<span class="det-units">'
+                + '<span class="du-qty">' + fmt(qty,0) + '</span> '
+                + '<span class="du-unit">' + (unit||"unit") + '</span>'
+                + '<span class="du-op">×</span>'
+                + '<span class="du-kg">' + fmt(wpuKg,3) + ' kg</span>'
+                + '<span class="du-op">=</span>'
+                + '<span class="du-kg">' + fmt(twKg,1) + ' kg</span>'
+                + '<span class="du-tot">(' + fmt(tw,3) + ' T)</span>'
+                + '</span>';
+        } else {
+            detHtml = '<span class="det-loose">' + fmt(wt,3) + ' T</span>';
+        }
+        var amtHtml = '₹&nbsp;' + fmt(amt,2);
+        var typeStr = mCurType;
+        var wtSubmit = mCurType === "Units" ? tw : wt;
+        var hiddens = ''
+            + '<input type="hidden" name="MaterialName[]"  value="' + name + '">' 
+            + '<input type="hidden" name="MaterialType[]"  value="' + typeStr + '">' 
+            + '<input type="hidden" name="Weight[]"        value="' + wtSubmit + '">' 
+            + '<input type="hidden" name="Quantity[]"      value="' + qty + '">' 
+            + '<input type="hidden" name="UnitType[]"      value="' + unit + '">' 
+            + '<input type="hidden" name="WeightPerUnit[]" value="' + wpuT + '">' 
+            + '<input type="hidden" name="TotalWeight[]"   value="' + tw + '">' 
+            + '<input type="hidden" name="Rate[]"          value="' + rate + '">' 
+            + '<input type="hidden" name="Amount[]"        value="' + amt + '">';
+        var actions = '<button type="button" class="mat-edit-btn" onclick="editRow(this)" title="Edit"><i class="ri-pencil-line" style="font-size:12px;"></i></button>'
+            + '<button type="button" class="mat-del-btn" onclick="delRow(this)" title="Delete"><i class="ri-delete-bin-line" style="font-size:12px;"></i></button>';
+        var newRow = $('<tr class="' + (mCurType==="Units"?"is-units":"") + '"'
+            + ' data-name="' + name + '" data-type="' + typeStr + '"'
+            + ' data-wt="' + wt + '" data-qty="' + qty + '" data-unit="' + unit + '"'
+            + ' data-wpu="' + wpuT + '" data-tw="' + tw + '"'
+            + ' data-rate="' + rate + '" data-amt="' + amt + '">' 
+            + '<td><span class="mat-num">?</span></td>'
+            + '<td style="font-weight:600;color:#1e293b;">' + name + '</td>'
+            + '<td>' + detHtml + '</td>'
+            + '<td class="text-end" style="color:#374151;">' + fmt(rate,2) + '</td>'
+            + '<td class="amt-td">' + amtHtml + '</td>'
+            + '<td>' + hiddens + actions + '</td>'
+            + '</tr>');
+        if (idx >= 0) {
+            $("#matBody tr").eq(idx).replaceWith(newRow);
+        } else {
+            $("#matBody").append(newRow);
+        }
+        reNumber();
+        calcAll();
+        matModalBS.hide();
+    }
+
+    function reNumber() {
+        $("#matBody tr").each(function(i) { $(this).find(".mat-num").text(i + 1); });
     }
 
     function delRow(btn) {
         $(btn).closest("tr").remove();
-        calcAll();
+        reNumber(); calcAll();
     }
 
-    $(document).on("input", ".wt,.rt", function() {
-        var row = $(this).closest("tr");
-        var w = parseFloat(row.find(".wt").val()) || 0,
-            r = parseFloat(row.find(".rt").val()) || 0;
-        row.find(".amt").val((w * r).toFixed(2));
-        calcAll();
-    });
+    function fmtNum(n) { return n.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}); }
 
     function calcAll() {
-        var tw = 0,
-            ta = 0;
-        $(".wt").each(function() {
-            tw += parseFloat($(this).val()) || 0;
+        var tw=0, ta=0, rows=0;
+        $("#matBody tr").each(function() {
+            var d = $(this).data();
+            tw += parseFloat(d.type==="Units" ? d.tw : d.wt) || 0;
+            ta += parseFloat(d.amt) || 0;
+            if ((d.name||"").trim()) rows++;
         });
-        $(".amt").each(function() {
-            ta += parseFloat($(this).val()) || 0;
-        });
-        $("#totWt").val(tw.toFixed(2));
-        $("#matAmt").val(ta.toFixed(2));
-        // Always auto-sync freight = material total
+        $("#totWt").val(tw > 0 ? tw.toFixed(3) : "");
+        $("#matAmt").val(ta > 0 ? "₹ " + fmtNum(ta) : "");
+        $("#hdr-rows").text(rows || "–");
+        $("#hdr-wt").text(tw > 0 ? tw.toFixed(2) + " T" : "–");
+        $("#hdr-amt").text(ta > 0 ? "₹ " + fmtNum(ta) : "–");
         $("#freightAmt").val(ta.toFixed(2));
         calcTotal();
     }
 
-    $(document).on("input", "#labourAmt,#holdingAmt,#otherAmt,#cashAdv,#onlineAdv,#tdsAmt,#commAmt", calcTotal);
+        $(document).on("input", "#labourAmt,#holdingAmt,#otherAmt,#cashAdv,#onlineAdv,#tdsAmt,#commAmt", calcTotal);
 
     function f(id) {
         return parseFloat($(id).val()) || 0;
@@ -775,30 +1265,20 @@ require_once "../layout/sidebar.php";
     $("#tripForm").on("submit", function(e) {
         e.preventDefault();
         if (!navigator.onLine) {
-            Swal.fire({
-                icon: "warning",
-                title: "No Internet"
-            });
+            SRV.toast.warning("Internet Disconnected!");
             return;
         }
-        if (!$("#sel_Vehicle").val()) {
-            Swal.fire({
-                icon: "warning",
-                title: "Vehicle Required",
-                text: "Please select a vehicle.",
-                confirmButtonColor: "#92400e"
-            });
-            return;
-        }
-        if (!$("#sel_Agent").val()) {
-            Swal.fire({
-                icon: "warning",
-                title: "Agent Required",
-                text: "Please select an agent.",
-                confirmButtonColor: "#92400e"
-            });
-            return;
-        }
+
+        // ── SRV Validation ──
+        const valid = SRV.validate('#tripForm', {
+            '[name="TripDate"]':        { required: [true, 'Trip Date is required.'], date: true },
+            'sel_Vehicle':              { required: [true, 'Please select a vehicle.'], selectRequired: [true, 'Please select a vehicle.'] },
+            'sel_Agent':                { required: [true, 'Please select an agent.'],  selectRequired: [true, 'Please select an agent.'] },
+            '[name="FromLocation"]':    { required: [true, 'From location is required.'] },
+            '[name="ToLocation"]':      { required: [true, 'To location is required.'] },
+            'freightAmt':               { required: [true, 'Freight amount is required.'], numeric: [true, 'Enter a valid number.'], positive: [true, 'Freight must be greater than 0.'] },
+        });
+        if (!valid) return;
         const btn = document.getElementById("saveBtn"),
             orig = btn.innerHTML;
         btn.disabled = true;

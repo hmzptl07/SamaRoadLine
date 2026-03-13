@@ -434,8 +434,8 @@ function renderSection(array $rows, string $pfx, bool $isAgent): void {
           <div class="fw-bold mt-1" style="font-size:22px;color:#15803d;" id="adj_totalBal">Rs.0</div>
         </div>
         <div class="col-4" id="adj_col3">
-          <div class="fs-10 fw-bold text-uppercase text-muted">Open Advances</div>
-          <div class="fw-bold fs-13 mt-1" id="adj_openCount">—</div>
+          <div class="fs-10 fw-bold text-uppercase text-muted">Will Adjust From</div>
+          <div class="fw-bold fs-13 mt-1" style="color:#0369a1;">Oldest First (Auto)</div>
         </div>
       </div>
     </div>
@@ -443,18 +443,7 @@ function renderSection(array $rows, string $pfx, bool $isAgent): void {
     <input type="hidden" id="adj_PartyId">
     <input type="hidden" id="adj_IsAgent">
 
-    <!-- Step 1: Select advance -->
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Select Advance Entry <span class="text-danger">*</span></label>
-      <select id="adj_AdvSel" class="form-select" onchange="advSel()">
-        <option value="">-- Select Advance --</option>
-      </select>
-    </div>
-    <div id="adj_advInfo" class="rounded p-2 mb-3 fs-13" style="display:none;border:1px solid #e2e8f0;background:#f8fafc;">
-      Advance: <b id="ai_amt">Rs.0</b> &nbsp;|&nbsp; Available: <b class="text-success" id="ai_rem">Rs.0</b>
-    </div>
-
-    <!-- Step 2: Select bill/trip -->
+    <!-- Select bill/trip -->
     <div class="mb-3" id="adj_billWrap">
       <label class="form-label fw-semibold" id="adj_billLabel">Select Unpaid Bill <span class="text-danger">*</span></label>
       <select id="adj_BillSel" class="form-select" onchange="billSel()">
@@ -566,7 +555,7 @@ function openAddAdv(){
   $('#adv_Date').val('<?= date('Y-m-d') ?>');
   /* Reset to Consigner */
   $('#pt_cons').prop('checked', true).trigger('change');
-  new bootstrap.Modal('#addAdvModal').show();
+  new bootstrap.Modal(document.getElementById('addAdvModal')).show();
 }
 
 /* Party type radio toggle — toggle WRAPPERS (not selects, because Select2 wraps them) */
@@ -619,16 +608,15 @@ function openAdj(partyId, partyName, totalRem, isAgent){
   $('#adj_IsAgent').val(isAgent);
   $('#adj_partyName').text(partyName);
   $('#adj_totalBal').text('Rs.'+parseFloat(totalRem).toFixed(2));
-  $('#adj_Amount,#adj_Remarks').val(''); $('#adj_billInfo,#adj_advInfo').hide();
+  $('#adj_Amount,#adj_Remarks').val(''); $('#adj_billInfo').hide();
   $('#adj_Date').val('<?= date('Y-m-d') ?>');
-  $('#adj_AdvSel').html('<option value="">Loading...</option>');
-  $('#adj_BillSel').html('<option value="">-- Select --</option>');
+  $('#adj_BillSel').html('<option value="">Loading...</option>');
 
   /* Style modal for type */
   if(_adjIsAgent){
     $('#adjModalHdr').css('background','linear-gradient(135deg,#78350f,#d97706)');
     $('#adjModalTitle').html('<i class="ri-road-map-line me-2"></i>Adjust vs Agent Trip');
-    $('#adj_saveBtn, #adj_SaveBtn').removeClass('btn-primary').addClass('btn-warning');
+    $('#adj_SaveBtn').removeClass('btn-primary').addClass('btn-warning');
     $('#adj_info_bar').css({'background':'#fffbeb','border':'1px solid #fde68a'});
     $('#adj_billLabel').html('Select Unpaid Agent Trip <span class="text-danger">*</span>');
   } else {
@@ -639,40 +627,10 @@ function openAdj(partyId, partyName, totalRem, isAgent){
     $('#adj_billLabel').html('Select Unpaid Regular Bill <span class="text-danger">*</span>');
   }
 
-  /* Load open advances */
-  fetch('PartyAdvance.php?getOpenAdvances=1&PartyId='+partyId)
-  .then(function(r){return r.json();}).then(function(adv){
-    var opts='<option value="">-- Select Advance Entry --</option>';
-    $('#adj_openCount').text(adv.length+' open advance'+(adv.length!=1?'s':''));
-    if(!adv.length) opts='<option disabled>No open advances</option>';
-    adv.forEach(function(a){
-      opts+='<option value="'+a.PartyAdvanceId
-        +'" data-rem="'+a.RemainingAmount+'" data-amt="'+a.Amount+'">'
-        +'Date: '+a.AdvanceDate+' | Rs.'+parseFloat(a.Amount).toFixed(0)
-        +' (Avail: Rs.'+parseFloat(a.RemainingAmount).toFixed(0)+') — '+a.PaymentMode
-        +'</option>';
-    });
-    $('#adj_AdvSel').html(opts);
-  });
-
-  new bootstrap.Modal('#adjModal').show();
-}
-
-function advSel(){
-  var opt=$('#adj_AdvSel option:selected');
-  if(!$('#adj_AdvSel').val()){ $('#adj_advInfo').hide(); return; }
-  _advRem = parseFloat(opt.data('rem')||0);
-  $('#ai_amt').text('Rs.'+parseFloat(opt.data('amt')||0).toFixed(2));
-  $('#ai_rem').text('Rs.'+_advRem.toFixed(2));
-  $('#adj_advInfo').show();
-  $('#adj_Amount').val(_advRem.toFixed(2));
-
-  /* Load bills or trips */
-  var pid=$('#adj_PartyId').val();
-  $('#adj_BillSel').html('<option value="">Loading...</option>');
+  /* Load bills/trips directly */
   var url = _adjIsAgent
-    ? 'PartyAdvance.php?getAgentTrips=1&AgentId='+pid
-    : 'PartyAdvance.php?getConsignerBills=1&PartyId='+pid;
+    ? 'PartyAdvance.php?getAgentTrips=1&AgentId='+partyId
+    : 'PartyAdvance.php?getConsignerBills=1&PartyId='+partyId;
   fetch(url).then(function(r){return r.json();}).then(function(items){
     var opts='<option value="">-- Select --</option>';
     if(!items.length) opts+='<option disabled>No unpaid '+(_adjIsAgent?'trips':'bills')+' found</option>';
@@ -685,9 +643,13 @@ function advSel(){
           +'🔵 '+b.billno+' ('+b.billdate+') — Due: Rs.'+parseFloat(b.remaining).toFixed(0)+'</option>';
       }
     });
-    $('#adj_BillSel').html(opts).trigger('change');
+    $('#adj_BillSel').html(opts);
   });
+
+  new bootstrap.Modal(document.getElementById('adjModal')).show();
 }
+
+
 
 function billSel(){
   var opt=$('#adj_BillSel option:selected');
@@ -697,16 +659,17 @@ function billSel(){
   $('#bi_paid').text('Rs.'+parseFloat(opt.data('paid')||0).toFixed(2));
   $('#bi_due').text('Rs.'+_billRem.toFixed(2));
   $('#adj_billInfo').show();
-  $('#adj_Amount').val(Math.min(_advRem,_billRem).toFixed(2));
+  /* Auto-fill: min of party total balance vs bill due */
+  $('#adj_Amount').val(Math.min(_adjIsAgent? parseFloat($('#adj_totalBal').text().replace('Rs.','').replace(/,/g,'')) : parseFloat($('#adj_totalBal').text().replace('Rs.','').replace(/,/g,'')), _billRem).toFixed(2));
 }
 
 function saveAdj(){
-  var advId=$('#adj_AdvSel').val(), billId=$('#adj_BillSel').val();
+  var billId=$('#adj_BillSel').val();
   var amt=parseFloat($('#adj_Amount').val());
-  if(!advId){ toast('warning','Please select an advance entry!'); return; }
+  var totalBal=parseFloat($('#adj_totalBal').text().replace('Rs.','').replace(/,/g,''))||0;
   if(!billId){ toast('warning',_adjIsAgent?'Please select a trip!':'Please select a bill!'); return; }
   if(!amt||amt<=0){ toast('warning','Enter valid amount!'); return; }
-  if(amt>_advRem){ Swal.fire({icon:'warning',title:'Exceeds balance!',text:'Available: Rs.'+_advRem.toFixed(2)}); return; }
+  if(amt>totalBal){ Swal.fire({icon:'warning',title:'Exceeds balance!',text:'Available Balance: Rs.'+totalBal.toFixed(2)}); return; }
   loading('Adjusting...');
   var fd=new FormData();
   if(_adjIsAgent){
@@ -714,7 +677,7 @@ function saveAdj(){
   } else {
     fd.append('adjustConsigner',1); fd.append('BillId',billId);
   }
-  fd.append('PartyAdvanceId',advId); fd.append('AdjustedAmount',amt);
+  fd.append('PartyId',$('#adj_PartyId').val()); fd.append('AdjustedAmount',amt);
   fd.append('AdjustmentDate',$('#adj_Date').val()); fd.append('Remarks',$('#adj_Remarks').val());
   post(fd).then(function(res){
     Swal.close();
@@ -737,7 +700,7 @@ function openLedger(partyId, partyName, isAgent){
   $('#ldg_body').html('');
   $('#ldg_summary').html('');
   $('#ldg_loading').show();
-  new bootstrap.Modal('#ledgerModal').show();
+  new bootstrap.Modal(document.getElementById('ledgerModal')).show();
 
   fetch('PartyAdvance.php?getPartyLedger=1&PartyId='+partyId)
   .then(function(r){return r.json();}).then(function(data){
@@ -768,7 +731,7 @@ function openLedger(partyId, partyName, isAgent){
       });
     });
     adjs.forEach(function(a){
-      var det=a.bill_type==='Regular'?('Bill: '+(a.BillNo||'#'+a.id)):('Trip: '+(a.VehicleNumber||'')+(a.route?' | '+a.route:''));
+      var det=a.bill_type==='RegularBill'?('Bill: '+(a.BillNo||'#'+a.id)):('Trip: '+(a.VehicleNumber||'')+(a.route?' | '+a.route:''));
       txns.push({date:a.txn_date, type:'OUT', amount:parseFloat(a.amount||0),
         remarks:a.Remarks, detail:det, billType:a.bill_type, ref:a.ref_label
       });
@@ -791,7 +754,7 @@ function openLedger(partyId, partyName, isAgent){
         inAmt='<span class="fw-bold text-success">Rs.'+t.amount.toFixed(2)+'</span>';
         outAmt='<span class="text-muted">—</span>';
       } else {
-        var bclr=t.billType==='Regular'?'#dbeafe:#bfdbfe;color:#1e40af':'#fef3c7;border-color:#fcd34d;color:#92400e';
+  
         badge='<span style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">▼ OUT</span>';
         inAmt='<span class="text-muted">—</span>';
         outAmt='<span class="fw-bold text-danger">Rs.'+t.amount.toFixed(2)+'</span>';

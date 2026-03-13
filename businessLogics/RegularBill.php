@@ -25,7 +25,7 @@ class RegularBill {
             WHERE bt.TripId IS NULL
               AND t.ConsignerId = ?
               AND t.TripType = 'Regular'
-              AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus != 'PaidDirectly')
+              AND (t.FreightType IS NULL OR t.FreightType != 'ToPay')
               $dateFrom $dateTo
             ORDER BY t.TripDate ASC");
         $stmt->execute([$partyId]);
@@ -39,10 +39,16 @@ class RegularBill {
         if (empty($tripIds)) return ['status' => 'error', 'msg' => 'Koi trip select nahi'];
         try {
             $pdo->beginTransaction();
-            $prefix = 'RBILL-' . date('Ym') . '-';
-            $last   = $pdo->query("SELECT BillNo FROM Bill WHERE BillNo LIKE '$prefix%' ORDER BY BillId DESC LIMIT 1")->fetch();
-            $seq    = $last ? intval(substr($last['BillNo'], -3)) + 1 : 1;
-            $billNo = $prefix . str_pad($seq, 3, '0', STR_PAD_LEFT);
+            // Financial year: April–March  e.g. Apr 2025 → 25-26, Jan 2026 → 25-26
+            $m       = intval(date('n'));
+            $y       = intval(date('Y'));
+            $fyStart = $m >= 4 ? $y : $y - 1;
+            $fyEnd   = $fyStart + 1;
+            $fy      = substr($fyStart, -2) . '-' . substr($fyEnd, -2);  // "25-26"
+            $prefix  = 'SRL-B/' . $fy . '/';
+            $last    = $pdo->query("SELECT BillNo FROM Bill WHERE BillNo LIKE '" . $prefix . "%' ORDER BY BillId DESC LIMIT 1")->fetch();
+            $seq     = $last ? intval(substr($last['BillNo'], -4)) + 1 : 1;
+            $billNo  = $prefix . str_pad($seq, 4, '0', STR_PAD_LEFT);
 
             $phs = implode(',', array_fill(0, count($tripIds), '?'));
             $sum = $pdo->prepare("SELECT SUM(FreightAmount) AS fr, SUM(TotalAmount) AS total, SUM(AdvanceAmount) AS adv, SUM(TDS) AS tds FROM TripMaster WHERE TripId IN ($phs)");
@@ -125,7 +131,7 @@ class RegularBill {
             LEFT JOIN BillTrip bt ON t.TripId = bt.TripId
             WHERE bt.TripId IS NULL
               AND t.TripType = 'Regular'
-              AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus != 'PaidDirectly')
+              AND (t.FreightType IS NULL OR t.FreightType != 'ToPay')
             ORDER BY p.PartyName ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
     }

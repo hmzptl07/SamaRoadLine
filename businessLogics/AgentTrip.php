@@ -9,11 +9,20 @@ class AgentTrip {
             SELECT t.*,
                    p1.PartyName AS ConsignerName,
                    p3.PartyName AS AgentName,
-                   v.VehicleNumber, v.VehicleName
+                   p3.MobileNo  AS AgentMobile,
+                   p3.City      AS AgentCity,
+                   p3.Address   AS AgentAddress,
+                   v.VehicleNumber, v.VehicleName,
+                   tc.CommissionAmount, tc.RecoveryFrom AS CommRecoveryFrom,
+                   tc.CommissionStatus,
+                   tv.VasuliAmount, tv.RecoverFrom AS VasuliRecoverFrom,
+                   tv.VasuliStatus
             FROM TripMaster t
-            LEFT JOIN PartyMaster p1  ON t.ConsignerId = p1.PartyId
-            LEFT JOIN PartyMaster p3  ON t.AgentId     = p3.PartyId
-            LEFT JOIN VehicleMaster v ON t.VehicleId   = v.VehicleId";
+            LEFT JOIN PartyMaster p1     ON t.ConsignerId = p1.PartyId
+            LEFT JOIN PartyMaster p3     ON t.AgentId     = p3.PartyId
+            LEFT JOIN VehicleMaster v    ON t.VehicleId   = v.VehicleId
+            LEFT JOIN tripcommission tc  ON t.TripId      = tc.TripId
+            LEFT JOIN tripvasuli tv      ON t.TripId      = tv.TripId";
     }
 
     public static function getAll(): array {
@@ -27,7 +36,18 @@ class AgentTrip {
 
     public static function getById(int $id): ?array {
         global $pdo;
-        $stmt = $pdo->prepare("SELECT * FROM TripMaster WHERE TripId = ? AND TripType = 'Agent'");
+        $stmt = $pdo->prepare("
+            SELECT t.*,
+                   p3.PartyName AS AgentName,
+                   p3.MobileNo  AS AgentMobile,
+                   p3.City      AS AgentCity,
+                   p3.Address   AS AgentAddress,
+                   v.VehicleNumber, v.VehicleName
+            FROM TripMaster t
+            LEFT JOIN PartyMaster  p3 ON t.AgentId   = p3.PartyId
+            LEFT JOIN VehicleMaster v  ON t.VehicleId = v.VehicleId
+            WHERE t.TripId = ? AND t.TripType = 'Agent'
+        ");
         $stmt->execute([$id]);
         $trip = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$trip) return null;
@@ -35,6 +55,12 @@ class AgentTrip {
         $comm                     = self::getCommission($id);
         $trip['CommissionAmount'] = $comm ? $comm['CommissionAmount'] : 0;
         $trip['RecoveryFrom']     = $comm ? $comm['RecoveryFrom']     : 'Owner';
+
+        $vasuli = self::getVasuli($id);
+        $trip['VasuliAmount']  = $vasuli['VasuliAmount']  ?? '';
+        $trip['RecoverFrom']   = $vasuli['RecoverFrom']   ?? 'Other';
+        $trip['VasuliStatus']  = $vasuli['VasuliStatus']  ?? 'Pending';
+        $trip['ReceivedDate']  = $vasuli['ReceivedDate']  ?? '';
         return $trip;
     }
 
@@ -52,6 +78,13 @@ class AgentTrip {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
+    public static function getVasuli(int $tripId) {
+        global $pdo;
+        $stmt = $pdo->prepare("SELECT VasuliAmount, RecoverFrom, VasuliStatus, ReceivedDate FROM tripvasuli WHERE TripId = ?");
+        $stmt->execute([$tripId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
     public static function insert(array $data) {
         global $pdo;
         try {
@@ -63,7 +96,7 @@ class AgentTrip {
             $pdo->prepare("
                 INSERT INTO TripMaster (
                     TripDate, TripType, VehicleId, ConsignerId, AgentId,
-                    AppointedByPartyType, FromLocation, ToLocation, InvoiceNo, LRNo,
+                    AppointedByPartyType, FromLocation, ToLocation, InvoiceNo, InvoiceDate, LRNo,
                     ConsigneeName, ConsigneeContactNo, ConsigneeCity, ConsigneeAddress,
                     DriverName, DriverContactNo, DriverAadharNo, DriverAddress,
                     MaterialTotalValue, FreightAmount,
@@ -72,7 +105,7 @@ class AgentTrip {
                     TotalAmount, NetAmount, FreightPaymentToOwnerStatus, Remarks, TripStatus
                 ) VALUES (
                     :TripDate, 'Agent', :VehicleId, :ConsignerId, :AgentId,
-                    'Consigner', :FromLocation, :ToLocation, :InvoiceNo, :LRNo,
+                    'Consigner', :FromLocation, :ToLocation, :InvoiceNo, :InvoiceDate, :LRNo,
                     :ConsigneeName, :ConsigneeContactNo, :ConsigneeCity, :ConsigneeAddress,
                     :DriverName, :DriverContactNo, :DriverAadharNo, :DriverAddress,
                     :MaterialTotalValue, :FreightAmount,
@@ -87,6 +120,7 @@ class AgentTrip {
                 ':FromLocation'                => $data['FromLocation']  ?? '',
                 ':ToLocation'                  => $data['ToLocation']    ?? '',
                 ':InvoiceNo'                   => $data['InvoiceNo']     ?? '',
+                ':InvoiceDate'                 => !empty($data['InvoiceDate']) ? $data['InvoiceDate'] : null,
                 ':LRNo'                        => $data['LRNo']          ?? '',
                 ':ConsigneeName'               => $data['ConsigneeName']      ?? '',
                 ':ConsigneeContactNo'          => $data['ConsigneeContactNo'] ?? '',
@@ -116,22 +150,39 @@ class AgentTrip {
 
             // Materials
             if (!empty($data['MaterialName'])) {
-                $ms = $pdo->prepare("INSERT INTO TripMaterial(TripId,MaterialName,Weight,Rate,Amount) VALUES(?,?,?,?,?)");
+                $ms = $pdo->prepare("INSERT INTO TripMaterial(TripId,MaterialName,MaterialType,Weight,Quantity,UnitType,WeightPerUnit,TotalWeight,Rate,Amount) VALUES(?,?,?,?,?,?,?,?,?,?)");
                 foreach ($data['MaterialName'] as $k => $name) {
                     if (trim($name) === '') continue;
-                    $w = floatval($data['Weight'][$k] ?? 0);
-                    $r = floatval($data['Rate'][$k]   ?? 0);
-                    $ms->execute([$tripId, trim($name), $w, $r, $w * $r]);
+                    $type = $data['MaterialType'][$k] ?? 'Loose';
+                    $r    = floatval($data['Rate'][$k] ?? 0);
+                    if ($type === 'Units') {
+                        $qty = floatval($data['Quantity'][$k] ?? 0);
+                        $wpu = floatval($data['WeightPerUnit'][$k] ?? 0);
+                        $tw  = $qty * $wpu;
+                        $ms->execute([$tripId, trim($name), 'Units', 0, $qty, $data['UnitType'][$k] ?? '', $wpu, $tw, $r, $tw * $r]);
+                    } else {
+                        $w = floatval($data['Weight'][$k] ?? 0);
+                        $ms->execute([$tripId, trim($name), 'Loose', $w, 0, null, 0, 0, $r, $w * $r]);
+                    }
                 }
             }
 
-            // Commission — RecoveryFrom: PaidDirectly = Owner, warna Party
+            // Commission
             $pdo->prepare("DELETE FROM TripCommission WHERE TripId = ?")->execute([$tripId]);
             $comm = floatval($data['CommissionAmount'] ?? 0);
             if ($comm > 0) {
                 $rf = ($data['FreightPaymentToOwnerStatus'] ?? '') === 'PaidDirectly' ? 'Owner' : 'Party';
                 $pdo->prepare("INSERT INTO TripCommission(TripId,CommissionAmount,RecoveryFrom) VALUES(?,?,?)")
                     ->execute([$tripId, $comm, $rf]);
+            }
+
+            // Vasuli
+            $pdo->prepare("DELETE FROM tripvasuli WHERE TripId = ?")->execute([$tripId]);
+            $vasuliAmt = !empty($data['VasuliAmount']) ? floatval($data['VasuliAmount']) : null;
+            if ($vasuliAmt !== null && $vasuliAmt > 0) {
+                $vrf = ($data['VasuliRecoverFrom'] ?? '') === 'Owner' ? 'Owner' : 'Other';
+                $pdo->prepare("INSERT INTO tripvasuli(TripId,VasuliAmount,RecoverFrom) VALUES(?,?,?)")
+                    ->execute([$tripId, $vasuliAmt, $vrf]);
             }
 
             $pdo->commit();
@@ -161,6 +212,7 @@ class AgentTrip {
                     FromLocation       = :FromLocation,
                     ToLocation         = :ToLocation,
                     InvoiceNo          = :InvoiceNo,
+                    InvoiceDate        = :InvoiceDate,
                     LRNo               = :LRNo,
                     ConsigneeName      = :ConsigneeName,
                     ConsigneeContactNo = :ConsigneeContactNo,
@@ -222,22 +274,39 @@ class AgentTrip {
             // Materials replace
             $pdo->prepare("DELETE FROM TripMaterial WHERE TripId = ?")->execute([$id]);
             if (!empty($data['MaterialName'])) {
-                $ms = $pdo->prepare("INSERT INTO TripMaterial(TripId,MaterialName,Weight,Rate,Amount) VALUES(?,?,?,?,?)");
+                $ms = $pdo->prepare("INSERT INTO TripMaterial(TripId,MaterialName,MaterialType,Weight,Quantity,UnitType,WeightPerUnit,TotalWeight,Rate,Amount) VALUES(?,?,?,?,?,?,?,?,?,?)");
                 foreach ($data['MaterialName'] as $k => $name) {
                     if (trim($name) === '') continue;
-                    $w = floatval($data['Weight'][$k] ?? 0);
-                    $r = floatval($data['Rate'][$k]   ?? 0);
-                    $ms->execute([$id, trim($name), $w, $r, $w * $r]);
+                    $type = $data['MaterialType'][$k] ?? 'Loose';
+                    $r    = floatval($data['Rate'][$k] ?? 0);
+                    if ($type === 'Units') {
+                        $qty = floatval($data['Quantity'][$k] ?? 0);
+                        $wpu = floatval($data['WeightPerUnit'][$k] ?? 0);
+                        $tw  = $qty * $wpu;
+                        $ms->execute([$id, trim($name), 'Units', 0, $qty, $data['UnitType'][$k] ?? '', $wpu, $tw, $r, $tw * $r]);
+                    } else {
+                        $w = floatval($data['Weight'][$k] ?? 0);
+                        $ms->execute([$id, trim($name), 'Loose', $w, 0, null, 0, 0, $r, $w * $r]);
+                    }
                 }
             }
 
-            // Commission — 1 trip = 1 commission guarantee (DELETE then INSERT)
+            // Commission
             $pdo->prepare("DELETE FROM TripCommission WHERE TripId = ?")->execute([$id]);
             $comm = floatval($data['CommissionAmount'] ?? 0);
             if ($comm > 0) {
                 $rf = ($data['FreightPaymentToOwnerStatus'] ?? '') === 'PaidDirectly' ? 'Owner' : 'Party';
                 $pdo->prepare("INSERT INTO TripCommission(TripId,CommissionAmount,RecoveryFrom) VALUES(?,?,?)")
                     ->execute([$id, $comm, $rf]);
+            }
+
+            // Vasuli
+            $pdo->prepare("DELETE FROM tripvasuli WHERE TripId = ?")->execute([$id]);
+            $vasuliAmt = !empty($data['VasuliAmount']) ? floatval($data['VasuliAmount']) : null;
+            if ($vasuliAmt !== null && $vasuliAmt > 0) {
+                $vrf = ($data['VasuliRecoverFrom'] ?? '') === 'Owner' ? 'Owner' : 'Other';
+                $pdo->prepare("INSERT INTO tripvasuli(TripId,VasuliAmount,RecoverFrom) VALUES(?,?,?)")
+                    ->execute([$id, $vasuliAmt, $vrf]);
             }
 
             $pdo->commit();

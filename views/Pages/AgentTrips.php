@@ -19,17 +19,76 @@ if (isset($_GET['getTripDetail'])) {
     exit;
 }
 
-$allTrips     = AgentTrip::getAll();
+/* ── AJAX: Dropdown options (Agents + Vehicles) from DB ── */
+if (isset($_GET['get_filters'])) {
+    header('Content-Type: application/json');
+
+    $stmt1 = $pdo->query("
+        SELECT DISTINCT p.PartyName AS label
+        FROM TripMaster t
+        JOIN PartyMaster p ON t.AgentId = p.PartyId
+        WHERE t.TripType = 'Agent' AND p.PartyName IS NOT NULL
+        ORDER BY p.PartyName ASC
+    ");
+    $agents = $stmt1->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt2 = $pdo->query("
+        SELECT DISTINCT v.VehicleNumber AS label
+        FROM TripMaster t
+        JOIN VehicleMaster v ON t.VehicleId = v.VehicleId
+        WHERE t.TripType = 'Agent' AND v.VehicleNumber IS NOT NULL
+        ORDER BY v.VehicleNumber ASC
+    ");
+    $vehicles = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['agents' => $agents, 'vehicles' => $vehicles]);
+    exit();
+}
+
+/* ── Server-side Date Filter ── */
+$today      = date('Y-m-d');
+$datePreset = $_GET['datePreset'] ?? 'all';
+$dateFrom   = $_GET['dateFrom']   ?? '';
+$dateTo     = $_GET['dateTo']     ?? '';
+switch ($datePreset) {
+    case 'today':     $dateFrom = $dateTo = $today; break;
+    case 'yesterday': $dateFrom = $dateTo = date('Y-m-d', strtotime('-1 day')); break;
+    case 'thisweek':
+        $dateFrom = date('Y-m-d', strtotime('monday this week'));
+        $dateTo   = date('Y-m-d', strtotime('sunday this week'));
+        break;
+    case 'thismonth':
+        $dateFrom = date('Y-m-d', strtotime('first day of this month'));
+        $dateTo   = date('Y-m-d', strtotime('last day of this month'));
+        break;
+    case 'custom': break;
+    default: $dateFrom = $dateTo = '';
+}
+
+$allTrips = AgentTrip::getAll();
+if ($dateFrom || $dateTo) {
+    $allTrips = array_values(array_filter($allTrips, function($t) use ($dateFrom, $dateTo) {
+        $d = substr($t['TripDate'] ?? '', 0, 10);
+        if ($dateFrom && $d < $dateFrom) return false;
+        if ($dateTo   && $d > $dateTo)   return false;
+        return true;
+    }));
+}
 $total        = count($allTrips);
 $openCount    = count(array_filter($allTrips, fn($t) => $t['TripStatus'] === 'Open'));
 $closedCount  = count(array_filter($allTrips, fn($t) => $t['TripStatus'] === 'Closed'));
 $totalFreight = array_sum(array_column($allTrips, 'FreightAmount'));
 $totalNet     = array_sum(array_column($allTrips, 'NetAmount'));
 
+
 require_once "../layout/header.php";
 require_once "../layout/sidebar.php";
 ?>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <style>
+    .filter-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:16px;}
     .page-header-card {
         background: linear-gradient(135deg, #78350f 0%, #d97706 100%);
         border-radius: 14px;
@@ -146,9 +205,9 @@ require_once "../layout/sidebar.php";
     }
 
     .owner-pending {
-        background: #fef2f2;
-        color: #dc2626;
-        border: 1px solid #fecaca;
+        background: #dbeafe;
+        color: #1d4ed8;
+        border: 1px solid #93c5fd;
         padding: 3px 8px;
         border-radius: 20px;
         font-size: 10px;
@@ -190,6 +249,16 @@ require_once "../layout/sidebar.php";
         display: flex;
         gap: 4px;
     }
+    /* ── Date Filter ── */
+    .df-preset-btn{padding:4px 13px;border-radius:20px;font-size:12px;font-weight:700;
+      border:2px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;transition:.15s;white-space:nowrap;}
+    .df-preset-btn:hover{border-color:#d97706;color:#d97706;background:#fffbeb;}
+    .df-preset-btn.df-active{border-color:#d97706;background:#d97706;color:#fff;}
+    .df-range-inp{font-size:12px;font-weight:600;border:2px solid #e2e8f0 !important;
+      border-radius:8px !important;padding:4px 8px !important;height:32px;width:140px;}
+    .df-range-inp:focus{border-color:#d97706 !important;box-shadow:none !important;}
+    .df-tag{background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;
+      padding:2px 10px;font-size:11px;font-weight:700;color:#92400e;white-space:nowrap;}
 </style>
 
 <div class="main-content app-content">
@@ -248,38 +317,71 @@ require_once "../layout/sidebar.php";
 
         <!-- Filter Bar -->
         <div class="filter-bar">
+            <!-- Date filter — server-side PHP -->
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+                <span style="font-size:12px;font-weight:800;color:#d97706;white-space:nowrap;"><i class="ri-calendar-line me-1"></i>Date:</span>
+                <?php
+                $qAll  = http_build_query(array_merge($_GET, ['datePreset'=>'all',      'dateFrom'=>'','dateTo'=>'']));
+                $qTod  = http_build_query(array_merge($_GET, ['datePreset'=>'today',    'dateFrom'=>'','dateTo'=>'']));
+                $qYes  = http_build_query(array_merge($_GET, ['datePreset'=>'yesterday','dateFrom'=>'','dateTo'=>'']));
+                $qWeek = http_build_query(array_merge($_GET, ['datePreset'=>'thisweek', 'dateFrom'=>'','dateTo'=>'']));
+                $qMon  = http_build_query(array_merge($_GET, ['datePreset'=>'thismonth','dateFrom'=>'','dateTo'=>'']));
+                ?>
+                <a href="?<?= $qAll  ?>" class="df-preset-btn <?= $datePreset==='all'       ?'df-active':'' ?>">All</a>
+                <a href="?<?= $qTod  ?>" class="df-preset-btn <?= $datePreset==='today'     ?'df-active':'' ?>">Today</a>
+                <a href="?<?= $qYes  ?>" class="df-preset-btn <?= $datePreset==='yesterday' ?'df-active':'' ?>">Yesterday</a>
+                <a href="?<?= $qWeek ?>" class="df-preset-btn <?= $datePreset==='thisweek'  ?'df-active':'' ?>">This Week</a>
+                <a href="?<?= $qMon  ?>" class="df-preset-btn <?= $datePreset==='thismonth' ?'df-active':'' ?>">This Month</a>
+                <div style="width:1px;height:24px;background:#e2e8f0;flex-shrink:0;"></div>
+                <!-- Custom range -->
+                <form method="GET" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                    <?php foreach($_GET as $k=>$v): if(in_array($k,['datePreset','dateFrom','dateTo'])) continue; ?>
+                    <input type="hidden" name="<?= htmlspecialchars($k) ?>" value="<?= htmlspecialchars($v) ?>">
+                    <?php endforeach; ?>
+                    <input type="hidden" name="datePreset" value="custom">
+                    <span style="font-size:12px;font-weight:700;color:#64748b;">From</span>
+                    <input type="date" name="dateFrom" value="<?= htmlspecialchars($datePreset==='custom'?$dateFrom:'') ?>" class="form-control df-range-inp">
+                    <span style="font-size:12px;font-weight:700;color:#64748b;">To</span>
+                    <input type="date" name="dateTo"   value="<?= htmlspecialchars($datePreset==='custom'?$dateTo:'') ?>"   class="form-control df-range-inp">
+                    <button type="submit" class="btn btn-sm btn-warning fw-bold" style="height:32px;border-radius:8px;font-size:12px;padding:0 12px;"><i class="ri-search-line"></i> Go</button>
+                </form>
+                <?php if($datePreset!=='all'&&$datePreset!==''): ?>
+                <span class="df-tag">
+                    <?php if($datePreset==='today') echo 'Today: '.date('d-m-Y');
+                    elseif($datePreset==='yesterday') echo 'Yesterday: '.date('d-m-Y',strtotime('-1 day'));
+                    elseif($datePreset==='thisweek') echo date('d-m-Y',strtotime('monday this week')).' → '.date('d-m-Y',strtotime('sunday this week'));
+                    elseif($datePreset==='thismonth') echo date('F Y');
+                    elseif($datePreset==='custom') echo ($dateFrom?date('d-m-Y',strtotime($dateFrom)):'').' → '.($dateTo?date('d-m-Y',strtotime($dateTo)):'');
+                    ?>
+                </span>
+                <?php endif; ?>
+            </div>
             <div class="row g-3 align-items-end">
-                <div class="col-md-2">
-                    <label class="form-label fw-semibold fs-12 mb-1">Status</label>
-                    <select id="fStatus" class="form-select form-select-sm">
-                        <option value="">All Status</option>
-                        <option value="Open">Open</option>
-                        <option value="Closed">Closed</option>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold fs-12 mb-1"><i class="ri-user-star-line me-1"></i>Agent</label>
+                    <select id="fAgent" class="s2-agent" style="width:100%;">
+                        <option value="">-- All Agents --</option>
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label fw-semibold fs-12 mb-1">Owner Payment</label>
-                    <select id="fOwner" class="form-select form-select-sm">
-                        <option value="">All</option>
-                        <option value="Pending">Pending</option>
-                        <option value="PaidDirectly">Paid Directly</option>
+                    <label class="form-label fw-semibold fs-12 mb-1"><i class="ri-truck-line me-1"></i>Vehicle</label>
+                    <select id="fVeh" class="s2-veh" style="width:100%;">
+                        <option value="">-- All Vehicles --</option>
                     </select>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button class="btn btn-outline-secondary btn-sm w-100" onclick="clearFilters()">
-                        <i class="ri-refresh-line me-1"></i>Clear
-                    </button>
+                <div class="col-md-1 d-flex align-items-end">
+                    <button class="btn btn-outline-secondary btn-sm w-100" onclick="clearFilters()" title="Clear"><i class="ri-refresh-line"></i></button>
                 </div>
                 <div class="col-md-4 ms-auto">
-                    <label class="form-label fw-semibold fs-12 mb-1">Search</label>
+                    <label class="form-label fw-semibold fs-12 mb-1"><i class="ri-search-line me-1"></i>Search</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white border-end-0" style="border-radius:8px 0 0 8px;">
                             <i class="ri-search-line text-muted"></i>
                         </span>
                         <input type="text" id="srchBox" class="form-control border-start-0 ps-1"
-                            placeholder="Vehicle, Agent, Location, LR No...">
-                        <span id="filterInfo" class="input-group-text fw-bold text-white"
-                            style="background:#d97706;border-radius:0 8px 8px 0;font-size:11px;min-width:52px;justify-content:center;"></span>
+                            placeholder="Route, LR No, Consignee..." style="border-radius:0;box-shadow:none;">
+                        <span id="filterInfo" class="input-group-text bg-primary text-white fw-bold"
+                            style="border-radius:0 8px 8px 0;font-size:11px;min-width:52px;justify-content:center;"></span>
                     </div>
                 </div>
             </div>
@@ -292,27 +394,41 @@ require_once "../layout/sidebar.php";
                     <table id="dtTrips" class="table table-hover align-middle mb-0 w-100">
                         <thead>
                             <tr class="amber-head">
-                                <th style="width:40px;">#</th>
-                                <th>Date</th>
-                                <th>Vehicle</th>
-                                <th>Agent</th>
-                                <th>Route</th>
-                                <th>LR No.</th>
-                                <th>Freight</th>
-                                <th>Net Amt.</th>
-                                <th>Owner Pay</th>
-                                <th>Status</th>
+                                <th style="width:38px;">#</th>
+                                <th style="min-width:95px;">Date</th>
+                                <th style="min-width:110px;">Vehicle</th>
+                                <th style="min-width:120px;">Agent</th>
+                                <th style="min-width:150px;">Route</th>
+                                <th style="min-width:80px;">LR No.</th>
+                                <th class="text-end" style="min-width:85px;">Freight</th>
+                                <th class="text-end" style="min-width:110px;">+ Charges</th>
+                                <th class="text-end" style="min-width:75px;">TDS</th>
+                                <th class="text-end" style="min-width:95px;">− Advance</th>
+                                <th class="text-end" style="min-width:95px;">Net Payable</th>
+                                <th style="min-width:90px;">Bhadu</th>
+                                <th style="min-width:120px;">Comm / Vasuli</th>
+                                <th style="min-width:80px;">Status</th>
                                 <th style="width:80px;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php $i = 1;
-                            foreach ($allTrips as $r): ?>
-                                <tr>
+                            foreach ($allTrips as $r):
+                                $fr     = floatval($r['FreightAmount']  ?? 0);
+                                $lab    = floatval($r['LabourCharge']   ?? 0);
+                                $hld    = floatval($r['HoldingCharge']  ?? 0);
+                                $oth    = floatval($r['OtherCharge']    ?? 0);
+                                $tds    = floatval($r['TDS']            ?? 0);
+                                $cash   = floatval($r['CashAdvance']    ?? 0);
+                                $online = floatval($r['OnlineAdvance']  ?? 0);
+                                $adv    = floatval($r['AdvanceAmount']  ?? 0);
+                                $net    = floatval($r['NetAmount']      ?? 0);
+                            ?>
+                                <tr data-date="<?= substr($r['TripDate']??'',0,10) ?>">
                                     <td class="text-muted fw-medium fs-13"><?= $i++ ?></td>
-                                    <td style="font-size:13px;white-space:nowrap;"><?= htmlspecialchars($r['TripDate'] ?? '') ?></td>
+                                    <td style="font-size:12px;white-space:nowrap;"><?= htmlspecialchars($r['TripDate'] ?? '') ?></td>
                                     <td>
-                                        <div class="fw-bold" style="font-size:13px;"><?= htmlspecialchars($r['VehicleNumber'] ?? '—') ?></div>
+                                        <div class="fw-bold" style="font-size:12.5px;"><?= htmlspecialchars($r['VehicleNumber'] ?? '—') ?></div>
                                         <?php if (!empty($r['VehicleName'])): ?>
                                             <div style="font-size:11px;color:#64748b;"><?= htmlspecialchars($r['VehicleName']) ?></div>
                                         <?php endif; ?>
@@ -323,19 +439,57 @@ require_once "../layout/sidebar.php";
                                             <span style="color:#d97706;font-weight:600;"><?= htmlspecialchars($r['FromLocation'] ?? '?') ?></span>
                                             <i class="ri-arrow-right-line" style="font-size:10px;color:#94a3b8;"></i>
                                             <span style="color:#dc2626;font-weight:600;"><?= htmlspecialchars($r['ToLocation'] ?? '?') ?></span>
-                                        <?php else: echo '<span class="text-muted">—</span>';
-                                        endif; ?>
+                                        <?php else: echo '<span class="text-muted">—</span>'; endif; ?>
                                     </td>
                                     <td style="font-size:12px;color:#64748b;"><?= htmlspecialchars($r['LRNo'] ?? '—') ?></td>
-                                    <td style="font-size:13px;font-weight:700;color:#92400e;">Rs.<?= number_format($r['FreightAmount'] ?? 0, 0) ?></td>
-                                    <td style="font-size:13px;font-weight:700;color:#1a237e;">Rs.<?= number_format($r['NetAmount'] ?? 0, 0) ?></td>
+                                    <!-- Freight -->
+                                    <td class="text-end" style="font-size:13px;font-weight:800;color:#92400e;white-space:nowrap;">Rs.<?= number_format($fr,0) ?></td>
+                                    <!-- + Charges -->
+                                    <td class="text-end" style="font-size:11px;line-height:1.75;white-space:nowrap;">
+                                        <?php if($lab>0): ?><div style="color:#b45309;font-weight:600;">+Labour <b>Rs.<?= number_format($lab,0) ?></b></div><?php endif; ?>
+                                        <?php if($hld>0): ?><div style="color:#b45309;font-weight:600;">+Holding <b>Rs.<?= number_format($hld,0) ?></b></div><?php endif; ?>
+                                        <?php if($oth>0): ?><div style="color:#b45309;font-weight:600;">+Other <b>Rs.<?= number_format($oth,0) ?></b></div><?php endif; ?>
+                                        <?php if($lab==0&&$hld==0&&$oth==0): ?><span style="color:#94a3b8;">—</span><?php endif; ?>
+                                    </td>
+                                    <!-- TDS -->
+                                    <td class="text-end" style="font-size:12px;white-space:nowrap;<?= $tds>0?'font-weight:800;color:#dc2626;':'color:#94a3b8;' ?>">
+                                        <?= $tds>0 ? 'Rs.'.number_format($tds,0) : '—' ?>
+                                    </td>
+                                    <!-- − Advance -->
+                                    <td class="text-end" style="font-size:11px;line-height:1.75;white-space:nowrap;">
+                                        <?php if($cash>0): ?><div style="color:#7c3aed;font-weight:600;">Cash <b>Rs.<?= number_format($cash,0) ?></b></div><?php endif; ?>
+                                        <?php if($online>0): ?><div style="color:#7c3aed;font-weight:600;">Online <b>Rs.<?= number_format($online,0) ?></b></div><?php endif; ?>
+                                        <?php if($adv>0&&$cash==0&&$online==0): ?><div style="color:#7c3aed;font-weight:800;">Rs.<?= number_format($adv,0) ?></div><?php endif; ?>
+                                        <?php if($adv==0): ?><span style="color:#94a3b8;">—</span><?php endif; ?>
+                                    </td>
+                                    <!-- Net Payable -->
+                                    <td class="text-end" style="font-size:13px;font-weight:900;color:#15803d;white-space:nowrap;">Rs.<?= number_format($net,0) ?></td>
+                                    <!-- Owner Pay -->
                                     <td>
                                         <?php if (($r['FreightPaymentToOwnerStatus'] ?? '') === 'PaidDirectly'): ?>
-                                            <span class="owner-paid">⚡ Direct</span>
+                                            <span class="owner-paid">ToPay</span>
                                         <?php else: ?>
-                                            <span class="owner-pending">⏳ Pending</span>
+                                            <span class="owner-pending">Regular</span>
                                         <?php endif; ?>
                                     </td>
+                                    <!-- Commission / Vasuli -->
+                                    <td style="font-size:11px;line-height:1.85;white-space:nowrap;">
+                                        <?php
+                                        $comm  = floatval($r['CommissionAmount'] ?? 0);
+                                        $vas   = floatval($r['VasuliAmount']     ?? 0);
+                                        $cStat = $r['CommissionStatus'] ?? 'Pending';
+                                        $vStat = $r['VasuliStatus']     ?? 'Pending';
+                                        if ($comm > 0):
+                                            $cClr = $cStat==='Received' ? '#15803d' : '#d97706';
+                                            $cBg  = $cStat==='Received' ? '#dcfce7' : '#fef3c7';
+                                        ?><div><span style="background:<?=$cBg?>;color:<?=$cClr?>;border:1px solid <?=$cClr?>44;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;">🤝 Rs.<?=number_format($comm,0)?><?=$cStat==='Received'?' ✓':''?></span></div><?php endif; ?>
+                                        <?php if ($vas > 0):
+                                            $vClr = $vStat==='Received' ? '#15803d' : '#0284c7';
+                                            $vBg  = $vStat==='Received' ? '#dcfce7' : '#e0f2fe';
+                                        ?><div><span style="background:<?=$vBg?>;color:<?=$vClr?>;border:1px solid <?=$vClr?>44;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;">🪙 Rs.<?=number_format($vas,0)?><?=$vStat==='Received'?' ✓':''?></span></div><?php endif; ?>
+                                        <?php if($comm==0 && $vas==0): ?><span style="color:#cbd5e1;">—</span><?php endif; ?>
+                                    </td>
+                                    <!-- Status -->
                                     <td>
                                         <?php if (($r['TripStatus'] ?? '') === 'Closed'): ?>
                                             <span class="status-closed">✓ Closed</span>
@@ -375,37 +529,48 @@ require_once "../layout/sidebar.php";
             scrollX: true,
             pageLength: 25,
             dom: 'rtip',
-            columnDefs: [{
-                orderable: false,
-                targets: [0, 10]
-            }],
-            language: {
-                paginate: {
-                    previous: '‹',
-                    next: '›'
-                }
-            },
+            columnDefs: [{ orderable: false, targets: [0, 14] }],
+            language: { paginate: { previous: '‹', next: '›' } },
             drawCallback: function() {
                 var i = this.api().page.info();
                 $('#filterInfo').text(i.recordsDisplay + '/' + i.recordsTotal);
             }
         });
-        $('#srchBox').on('keyup input', function() {
-            dtTrips.search($(this).val()).draw();
-        });
-        $('#fStatus').on('change', function() {
-            dtTrips.column(9).search(this.value || '').draw();
-        });
-        $('#fOwner').on('change', function() {
-            dtTrips.column(8).search(this.value || '').draw();
-        });
+        $('#srchBox').on('keyup input', function() { dtTrips.search($(this).val()).draw(); });
+
+        function escReg(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+        // Init Select2 — bootstrap-5 theme
+        $('#fAgent').select2({theme:'bootstrap-5', allowClear:true, placeholder:'-- All Agents --',   width:'100%'});
+        $('#fVeh').select2({  theme:'bootstrap-5', allowClear:true, placeholder:'-- All Vehicles --', width:'100%'});
+
+        // ── Load dropdown options from DB via AJAX ──
+        fetch(window.location.pathname + '?get_filters=1')
+            .then(r => r.json())
+            .then(function(data){
+                data.agents.forEach(function(item){
+                    $('#fAgent').append(new Option(item.label, item.label, false, false));
+                });
+                data.vehicles.forEach(function(item){
+                    $('#fVeh').append(new Option(item.label, item.label, false, false));
+                });
+                $('#fAgent, #fVeh').trigger('change.select2');
+            })
+            .catch(function(){ console.warn('Dropdown load failed'); });
+
+        // ── Dropdown change → DataTable column filter ──
+        $('#fAgent').on('change', function(){ dtTrips.column(3).search(this.value ? '^'+escReg(this.value)+'$':'', true,false).draw(); });
+        $('#fVeh').on('change',   function(){ dtTrips.column(2).search(this.value || '', false, false).draw(); });
     });
 
     function clearFilters() {
-        $('#fStatus, #fOwner').val('').trigger('change');
+        $('#fAgent').val(null).trigger('change');
+        $('#fVeh').val(null).trigger('change');
         $('#srchBox').val('');
-        dtTrips.search('').draw();
+        dtTrips.search('').columns().search('').draw();
     }
+
+    /* Date filter handled server-side via PHP + GET params */
 
     function rupee(n) {
         return 'Rs.' + parseFloat(n || 0).toLocaleString('en-IN', {
@@ -443,21 +608,32 @@ require_once "../layout/sidebar.php";
                 var totalWt = 0,
                     totalAmt = 0;
                 if (mats.length === 0) {
-                    matRows = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px;">No materials added</td></tr>';
+                    matRows = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px;">No materials added</td></tr>';
                 } else {
                     mats.forEach(function(m, i) {
-                        totalWt += parseFloat(m.Weight || 0);
+                        var isU   = m.MaterialType === 'Units';
+                        var wt    = isU ? parseFloat(m.TotalWeight||0) : parseFloat(m.Weight||0);
+                        var qty   = parseInt(m.Quantity||0);
+                        var utype = m.UnitType||'unit';
+                        var wpu   = parseFloat(m.WeightPerUnit||0);
+                        var qtyCol = isU
+                            ? `<span style="font-size:11px;font-weight:700;color:#92400e;">${qty} ${utype}</span>`
+                            : `<span style="font-size:11px;">${wt.toFixed(3)} T</span>`;
+                        var descExtra = isU
+                            ? `<div style="font-size:10px;color:#64748b;margin-top:1px;">${qty}&times;${(wpu*1000).toFixed(1)}kg = ${wt.toFixed(3)} T</div>`
+                            : '';
+                        totalWt  += wt;
                         totalAmt += parseFloat(m.Amount || 0);
                         matRows += `<tr style="background:${i%2===0?'#fff':'#fafbfc'}">
-                        <td style="padding:7px 10px;font-weight:600;font-size:13px;">${m.MaterialName||'—'}</td>
-                        <td style="padding:7px 10px;text-align:center;font-size:13px;">${parseFloat(m.Weight||0).toFixed(3)} T</td>
-                        <td style="padding:7px 10px;text-align:right;font-size:13px;">${rupee(m.Rate)}/T</td>
+                        <td style="padding:7px 10px;font-size:12px;">${qtyCol}</td>
+                        <td style="padding:7px 10px;font-weight:600;font-size:13px;">${m.MaterialName||'—'}${descExtra}</td>
+                        <td style="padding:7px 10px;text-align:right;font-size:13px;">${rupee(m.Rate)}</td>
                         <td style="padding:7px 10px;text-align:right;font-size:13px;font-weight:700;color:#92400e;">${rupee(m.Amount)}</td>
                     </tr>`;
                     });
                     matRows += `<tr style="background:#fef3c7;font-weight:800;border-top:2px solid #fcd34d;">
+                    <td style="padding:8px 10px;font-size:11px;">${totalWt.toFixed(3)} T</td>
                     <td style="padding:8px 10px;">Total</td>
-                    <td style="padding:8px 10px;text-align:center;">${totalWt.toFixed(3)} T</td>
                     <td></td>
                     <td style="padding:8px 10px;text-align:right;color:#92400e;">${rupee(totalAmt)}</td>
                 </tr>`;
@@ -482,7 +658,7 @@ require_once "../layout/sidebar.php";
                 <span style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">Trip #${t.TripId}</span>
                 <span style="background:${statusBg};color:${statusCl};border:1px solid currentColor;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;">${t.TripStatus}</span>
                 <span style="color:${ownerClr};border:1px solid currentColor;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;">
-                  ${t.FreightPaymentToOwnerStatus==='PaidDirectly'?'⚡ Paid Directly':'⏳ Owner Pending'}
+                  ${t.FreightPaymentToOwnerStatus==='PaidDirectly'?'ToPay':'Regular'}
                 </span>
               </div>
 
@@ -505,20 +681,19 @@ require_once "../layout/sidebar.php";
                     <div class="info-val">${t.VehicleNumber||'—'}</div>
                     <div class="info-sub">${t.VehicleName||''}</div>
                   </div>
-                  <div class="info-cell" style="background:#fef3c7;">
-                    <div class="info-lbl" style="color:#92400e;">Agent</div>
-                    <div class="info-val" style="color:#92400e;">${t.AgentName||'—'}</div>
-                  </div>
                   <div class="info-cell">
                     <div class="info-lbl">Invoice No. / LR No.</div>
                     <div class="info-val">${t.InvoiceNo||'—'} &nbsp;<span style="color:#94a3b8;">/</span>&nbsp; ${t.LRNo||'—'}</div>
+                  </div>
+                  <div class="info-cell">
+                    <div class="info-lbl">Invoice Date</div>
+                    <div class="info-val" style="color:#92400e;">${t.InvoiceDate||'—'}</div>
                   </div>
                   <div class="info-cell">
                     <div class="info-lbl">Driver</div>
                     <div class="info-val">${t.DriverName||'—'}</div>
                     <div class="info-sub">${t.DriverContactNo||''} ${t.DriverAadharNo?'| Aadhar: '+t.DriverAadharNo:''}</div>
                   </div>
-                 
                 </div>
                 <!-- Route -->
                 <div style="background:linear-gradient(135deg,#78350f,#d97706);border-radius:9px;padding:10px 16px;margin-top:12px;display:flex;align-items:center;gap:10px;color:#fff;">
@@ -527,6 +702,26 @@ require_once "../layout/sidebar.php";
                   <i class="ri-arrow-right-line"></i>
                   <span style="font-weight:700;">${t.ToLocation||'?'}</span>
                   <span style="margin-left:auto;font-size:11px;opacity:.8;">Route</span>
+                </div>
+                <!-- Agent Info -->
+                <div style="margin-top:14px;font-size:11px;font-weight:800;color:#92400e;text-transform:uppercase;letter-spacing:.8px;border-left:3px solid #d97706;padding-left:8px;margin-bottom:8px;">⭐ Agent</div>
+                <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <div>
+                    <div style="font-size:10px;color:#92400e;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Name</div>
+                    <div style="font-size:13px;font-weight:800;color:#78350f;">${t.AgentName||'—'}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:#92400e;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Mobile</div>
+                    <div style="font-size:13px;">${t.AgentMobile?`<a href="tel:${t.AgentMobile}" style="color:#0284c7;font-weight:700;text-decoration:none;">📞 ${t.AgentMobile}</a>`:'<span style="color:#94a3b8;">—</span>'}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:#92400e;font-weight:700;text-transform:uppercase;margin-bottom:3px;">City</div>
+                    <div style="font-size:13px;font-weight:600;color:#1e293b;">${t.AgentCity||'—'}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:#92400e;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Address</div>
+                    <div style="font-size:12px;color:#475569;">${t.AgentAddress||'—'}</div>
+                  </div>
                 </div>
                 ${t.Remarks?`<div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;font-size:12px;color:#854d0e;margin-top:10px;"><i class="ri-chat-1-line me-1"></i><b>Remarks:</b> ${t.Remarks}</div>`:''}
               </div>
@@ -537,8 +732,8 @@ require_once "../layout/sidebar.php";
                   <table style="width:100%;border-collapse:collapse;">
                     <thead>
                       <tr style="background:#92400e;color:#fff;">
+                        <th style="padding:9px 12px;text-align:left;font-size:12px;">Qty/Wt</th>
                         <th style="padding:9px 12px;text-align:left;font-size:12px;">Material</th>
-                        <th style="padding:9px 12px;text-align:center;font-size:12px;">Weight</th>
                         <th style="padding:9px 12px;text-align:right;font-size:12px;">Rate</th>
                         <th style="padding:9px 12px;text-align:right;font-size:12px;">Amount</th>
                       </tr>
@@ -592,8 +787,13 @@ require_once "../layout/sidebar.php";
                     </tr>`:''}
                     ${parseFloat(t.CommissionAmount||0)>0?`
                     <tr>
-                      <td style="padding:8px 14px;color:#d97706;border-bottom:1px solid #f1f5f9;">🤝 Commission</td>
+                      <td style="padding:8px 14px;color:#d97706;border-bottom:1px solid #f1f5f9;">🤝 Commission <small style="color:#94a3b8;">(${t.RecoveryFrom||'Party'})</small></td>
                       <td style="padding:8px 14px;text-align:right;color:#d97706;border-bottom:1px solid #f1f5f9;">${rupee(t.CommissionAmount)}</td>
+                    </tr>`:''}
+                    ${parseFloat(t.VasuliAmount||0)>0?`
+                    <tr>
+                      <td style="padding:8px 14px;color:#15803d;border-bottom:1px solid #f1f5f9;">🪙 Vasuli <small style="color:#94a3b8;">(From: ${t.RecoverFrom||'Other'}) — ${t.VasuliStatus||'Pending'}</small></td>
+                      <td style="padding:8px 14px;text-align:right;color:#15803d;border-bottom:1px solid #f1f5f9;">${rupee(t.VasuliAmount)}</td>
                     </tr>`:''}
                     <tr style="background:#dcfce7;">
                       <td style="padding:10px 14px;font-weight:800;font-size:14px;color:#15803d;">✅ Net Payable</td>
@@ -624,6 +824,19 @@ require_once "../layout/sidebar.php";
                 });
             });
     }
+
+    <?php if(!empty($_GET['locked'])): ?>
+    $(document).ready(function(){
+        <?php $r = $_GET['reason'] ?? ''; ?>
+        <?php if($r === 'owner_paid'): ?>
+        SRV.toast.error('⛔ Trip lock hai — Owner Payment ho chuki hai, edit nahi kar sakte.');
+        <?php elseif($r === 'agent_paid'): ?>
+        SRV.toast.error('⛔ Trip lock hai — Agent Payment ho chuki hai, edit nahi kar sakte.');
+        <?php else: ?>
+        SRV.toast.error('⛔ Trip lock hai — editing is not allowed.');
+        <?php endif; ?>
+    });
+    <?php endif; ?>
 
     window.addEventListener('offline', () => {
         if (typeof SRV !== 'undefined') SRV.toast.warning('Internet Disconnected!');

@@ -21,6 +21,128 @@ if (isset($_POST['generateBill'])) {
     exit();
 }
 
+/* ══ AJAX — Get Bill Detail ══ */
+if (isset($_GET['getBillDetail'])) {
+    header('Content-Type: application/json');
+    $bid  = intval($_GET['BillId'] ?? 0);
+    $bill = RegularBill::getBillWithParty($pdo, $bid);
+    if (!$bill) { echo json_encode(['error'=>'Not found']); exit; }
+    $trips = RegularBill::getBillTrips($pdo, $bid);
+    // Payments
+    $pmtStmt = $pdo->prepare("SELECT * FROM billpayment WHERE BillId = ? ORDER BY PaymentDate ASC");
+    $pmtStmt->execute([$bid]);
+    $payments = $pmtStmt->fetchAll(PDO::FETCH_ASSOC);
+    $paidAmt  = array_sum(array_column($payments, 'Amount'));
+    $balance  = floatval($bill['NetBillAmount']) - $paidAmt;
+    $bill['PaidAmount'] = $paidAmt;
+    $bill['Balance']    = $balance;
+    $bill['Payments']   = $payments;
+    $bill['Trips']      = $trips;
+    echo json_encode($bill);
+    exit();
+}
+
+/* ══ AJAX — Update Bill (Date + Remarks) ══ */
+if (isset($_POST['updateBill'])) {
+    header('Content-Type: application/json');
+    $bid      = intval($_POST['BillId'] ?? 0);
+    $billDate = $_POST['BillDate'] ?? '';
+    $remarks  = $_POST['Remarks']  ?? '';
+    $tripIds  = json_decode($_POST['tripIds'] ?? '[]', true);
+
+    $chk = $pdo->prepare("SELECT BillStatus, PartyId FROM Bill WHERE BillId = ?");
+    $chk->execute([$bid]);
+    $row = $chk->fetch(PDO::FETCH_ASSOC);
+    if (!$row) { echo json_encode(['status'=>'error','msg'=>'Bill not found']); exit; }
+    if (in_array($row['BillStatus'], ['Paid','PartiallyPaid'])) {
+        echo json_encode(['status'=>'error','msg'=>'Bill mein payment ho chuki hai — edit nahi kar sakte']); exit;
+    }
+    if (empty($tripIds)) { echo json_encode(['status'=>'error','msg'=>'Kam se kam ek trip select karo']); exit; }
+
+    try {
+        $pdo->beginTransaction();
+
+        // Old trips → back to Open
+        $oldTrips = $pdo->prepare("SELECT TripId FROM BillTrip WHERE BillId = ?");
+        $oldTrips->execute([$bid]);
+        $oldIds = array_column($oldTrips->fetchAll(PDO::FETCH_ASSOC), 'TripId');
+        if ($oldIds) {
+            $ph = implode(',', array_fill(0, count($oldIds), '?'));
+            $pdo->prepare("UPDATE TripMaster SET TripStatus='Open' WHERE TripId IN ($ph)")->execute($oldIds);
+        }
+
+        // Remove old BillTrip
+        $pdo->prepare("DELETE FROM BillTrip WHERE BillId = ?")->execute([$bid]);
+
+        // Insert new trips
+        $ins = $pdo->prepare("INSERT INTO BillTrip(BillId,TripId) VALUES(?,?)");
+        foreach ($tripIds as $tid) $ins->execute([$bid, intval($tid)]);
+
+        // New trips → Billed
+        $ph2 = implode(',', array_fill(0, count($tripIds), '?'));
+        $pdo->prepare("UPDATE TripMaster SET TripStatus='Billed' WHERE TripId IN ($ph2)")->execute($tripIds);
+
+        // Recalculate Bill totals
+        $sum = $pdo->prepare("SELECT SUM(TotalAmount) AS total, SUM(AdvanceAmount) AS adv, SUM(TDS) AS tds FROM TripMaster WHERE TripId IN ($ph2)");
+        $sum->execute($tripIds); $s = $sum->fetch(PDO::FETCH_ASSOC);
+        $net = floatval($s['total']) - floatval($s['adv']) - floatval($s['tds']);
+
+        $pdo->prepare("UPDATE Bill SET BillDate=?, Remarks=?, TotalFreightAmount=?, TotalAdvanceAmount=?, NetBillAmount=? WHERE BillId=?")
+            ->execute([$billDate, $remarks, $s['total'], $s['adv'], $net, $bid]);
+
+        $pdo->commit();
+        echo json_encode(['status'=>'success']);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['status'=>'error','msg'=>$e->getMessage()]);
+    }
+    exit();
+}
+
+/* ══ AJAX — Get Unbilled Trips for Edit (party ke unbilled + current bill ke trips) ══ */
+if (isset($_GET['getEditTrips'])) {
+    header('Content-Type: application/json');
+    $bid     = intval($_GET['BillId']  ?? 0);
+    $partyId = intval($_GET['partyId'] ?? 0);
+
+    // Current bill trips
+    $cur = $pdo->prepare("
+        SELECT t.TripId, t.TripDate, t.InvoiceNo, t.FromLocation, t.ToLocation,
+               t.FreightAmount, t.TotalAmount, t.CashAdvance, t.OnlineAdvance,
+               t.AdvanceAmount, t.TDS,
+               (t.TotalAmount - t.AdvanceAmount - t.TDS) AS NetAmount,
+               v.VehicleNumber,
+               COALESCE((SELECT SUM(m.Weight) FROM TripMaterial m WHERE m.TripId=t.TripId),0) AS TotalWeight
+        FROM BillTrip bt JOIN TripMaster t ON bt.TripId=t.TripId
+        LEFT JOIN VehicleMaster v ON t.VehicleId=v.VehicleId
+        WHERE bt.BillId=? ORDER BY t.TripDate ASC");
+    $cur->execute([$bid]);
+    $current = $cur->fetchAll(PDO::FETCH_ASSOC);
+    $currentIds = array_column($current,'TripId');
+
+    // Unbilled trips of same party (exclude trips already in ANY bill)
+    $unb = $pdo->prepare("
+        SELECT t.TripId, t.TripDate, t.InvoiceNo, t.FromLocation, t.ToLocation,
+               t.FreightAmount, t.TotalAmount, t.CashAdvance, t.OnlineAdvance,
+               t.AdvanceAmount, t.TDS,
+               (t.TotalAmount - t.AdvanceAmount - t.TDS) AS NetAmount,
+               v.VehicleNumber,
+               COALESCE((SELECT SUM(m.Weight) FROM TripMaterial m WHERE m.TripId=t.TripId),0) AS TotalWeight
+        FROM TripMaster t
+        LEFT JOIN VehicleMaster v ON t.VehicleId=v.VehicleId
+        LEFT JOIN BillTrip bt ON t.TripId=bt.TripId
+        WHERE bt.TripId IS NULL
+          AND t.ConsignerId=?
+          AND t.TripType='Regular'
+          AND (t.FreightType IS NULL OR t.FreightType!='ToPay')
+        ORDER BY t.TripDate ASC");
+    $unb->execute([$partyId]);
+    $unbilled = $unb->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['current'=>$current,'unbilled'=>$unbilled,'currentIds'=>$currentIds]);
+    exit();
+}
+
 /* ══ Page Data ══ */
 $bills   = RegularBill::getAllBills($pdo);
 $parties = array_filter(Party::getAll(), fn($p) => $p['PartyType'] === 'Consigner' && $p['IsActive'] === 'Yes');
@@ -52,6 +174,15 @@ require_once "../layout/sidebar.php";
 .badge-paid{background:#dcfce7;color:#16a34a;border:1px solid #bbf7d0;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
 /* Modal */
 .modal-head-blue{background:linear-gradient(135deg,#1a237e,#1d4ed8);border-radius:16px 16px 0 0;padding:16px 24px;}
+/* View / Edit modal */
+.bv-tab-btn{background:none;border:none;padding:10px 18px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:.15s;}
+.bv-tab-btn:hover{color:#1a237e;background:#f0f4ff;}
+.bv-tab-active{color:#1a237e!important;border-bottom-color:#1a237e!important;background:#eff6ff;}
+.bv-row{display:flex;padding:7px 0;border-bottom:1px solid #f1f5f9;font-size:13px;gap:8px;}
+.bv-row:last-child{border-bottom:none;}
+.bv-lbl{width:150px;flex-shrink:0;color:#64748b;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;padding-top:1px;}
+.bv-val{flex:1;color:#1e293b;font-size:13px;}
+.bv-trip-head th{background:#1a237e;color:#fff;font-size:11px;padding:7px 10px;border:none;}
 .step-badge{display:inline-flex;align-items:center;gap:6px;background:#1a237e;color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;margin-bottom:10px;}
 .trip-select-table thead th{background:#1a237e;color:#fff;font-size:11.5px;padding:7px 10px;border:none;}
 .net-summary-box{background:linear-gradient(135deg,#f0f4ff,#e8efff);border:2px solid #c7d7fc;border-radius:12px;padding:14px 16px;text-align:center;}
@@ -162,7 +293,7 @@ require_once "../layout/sidebar.php";
             <th>Freight</th>
             <th>Net Amount</th>
             <th>Status</th>
-            <th style="width:90px;">Actions</th>
+            <th style="width:115px;">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -203,10 +334,16 @@ require_once "../layout/sidebar.php";
         </td>
         <td>
             <div class="action-btn-group">
-                            <a href="RegularBill_print.php?BillId=<?= $b['BillId'] ?>" target="_blank" class="btn btn-sm btn-outline-dark btn-icon" title="Print Bill"><i class="ri-printer-line"></i></a>
-
-               
-                <a href="BillPayment_manage.php" class="btn btn-sm btn-outline-success btn-icon" title="Manage Payment">
+                <button class="btn btn-sm btn-outline-info btn-icon" title="View Bill"
+                    onclick='viewBill(<?= $b["BillId"] ?>)'><i class="ri-eye-line"></i></button>
+                <?php if ($b['BillStatus'] === 'Generated'): ?>
+                <button class="btn btn-sm btn-outline-warning btn-icon" title="Edit Bill"
+                    onclick='editBill(<?= $b["BillId"] ?>, "<?= htmlspecialchars($b["BillNo"]) ?>", "<?= $b["BillDate"] ?>", "<?= htmlspecialchars(addslashes($b["Remarks"] ?? "")) ?>", <?= $b["PartyId"] ?>)'>
+                    <i class="ri-edit-line"></i></button>
+                <?php endif; ?>
+                <a href="RegularBill_print.php?BillId=<?= $b['BillId'] ?>" target="_blank"
+                    class="btn btn-sm btn-outline-dark btn-icon" title="Print Bill"><i class="ri-printer-line"></i></a>
+                <a href="BillPayment_manage.php?BillId=<?= $b['BillId'] ?>" class="btn btn-sm btn-outline-success btn-icon" title="Manage Payment">
                     <i class="ri-secure-payment-line"></i>
                 </a>
             </div>
@@ -219,6 +356,174 @@ require_once "../layout/sidebar.php";
 </div>
 </div>
 
+</div>
+</div>
+
+<!-- ══════════════════════════════════
+     VIEW BILL MODAL
+══════════════════════════════════ -->
+<div class="modal fade" id="viewBillModal" tabindex="-1">
+<div class="modal-dialog modal-xl modal-dialog-centered">
+<div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+    <div class="modal-head-blue" style="border-radius:16px 16px 0 0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:16px;font-weight:800;color:#fff;display:flex;align-items:center;gap:8px;">
+                    <i class="ri-file-list-3-line"></i>
+                    <span id="vbBillNo">Bill Details</span>
+                </div>
+                <div id="vbBadges" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+            </div>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+    </div>
+    <!-- Tab Nav -->
+    <div style="display:flex;border-bottom:2px solid #e2e8f0;background:#f8fafc;padding:0 20px;">
+        <button class="bv-tab-btn bv-tab-active" id="bvbtn-info"     onclick="bvSwitch('info',this)"><i class="ri-information-line me-1"></i>Bill Info</button>
+        <button class="bv-tab-btn"               id="bvbtn-trips"    onclick="bvSwitch('trips',this)"><i class="ri-road-map-line me-1"></i>Trips</button>
+        <button class="bv-tab-btn"               id="bvbtn-payments" onclick="bvSwitch('payments',this)"><i class="ri-money-rupee-circle-line me-1"></i>Payments</button>
+    </div>
+    <div class="modal-body" style="padding:20px 24px;max-height:65vh;overflow-y:auto;">
+        <!-- Info Tab -->
+        <div id="bvpane-info">
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <div style="background:#f0f4ff;border-radius:10px;padding:14px 16px;">
+                        <div style="font-size:10px;font-weight:800;color:#1a237e;text-transform:uppercase;letter-spacing:.8px;border-left:3px solid #1a237e;padding-left:8px;margin-bottom:10px;">Bill Info</div>
+                        <div class="bv-row"><span class="bv-lbl">Bill No.</span><span class="bv-val fw-bold text-primary" id="vi-billno"></span></div>
+                        <div class="bv-row"><span class="bv-lbl">Bill Date</span><span class="bv-val fw-bold" id="vi-billdate"></span></div>
+                        <div class="bv-row"><span class="bv-lbl">Status</span><span class="bv-val" id="vi-status"></span></div>
+                        <div class="bv-row"><span class="bv-lbl">Remarks</span><span class="bv-val" id="vi-remarks"></span></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div style="background:#f0fdf4;border-radius:10px;padding:14px 16px;">
+                        <div style="font-size:10px;font-weight:800;color:#15803d;text-transform:uppercase;letter-spacing:.8px;border-left:3px solid #16a34a;padding-left:8px;margin-bottom:10px;">Party</div>
+                        <div class="bv-row"><span class="bv-lbl">Name</span><span class="bv-val fw-bold" id="vi-party"></span></div>
+                        <div class="bv-row"><span class="bv-lbl">City</span><span class="bv-val" id="vi-city"></span></div>
+                        <div class="bv-row"><span class="bv-lbl">Address</span><span class="bv-val" id="vi-address"></span></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Amount Summary -->
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div style="background:#f0f4ff;border-radius:10px;padding:14px;text-align:center;">
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;">Net Bill Amount</div>
+                        <div style="font-size:22px;font-weight:900;color:#1a237e;" id="vi-netamt"></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div style="background:#f0fdf4;border-radius:10px;padding:14px;text-align:center;">
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;">Paid Amount</div>
+                        <div style="font-size:22px;font-weight:900;color:#16a34a;" id="vi-paidamt"></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div style="background:#fef2f2;border-radius:10px;padding:14px;text-align:center;">
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;">Balance</div>
+                        <div style="font-size:22px;font-weight:900;color:#dc2626;" id="vi-balance"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Trips Tab -->
+        <div id="bvpane-trips" style="display:none;">
+            <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" style="font-size:12px;">
+                <thead class="bv-trip-head">
+                    <tr>
+                        <th>#</th><th>Date</th><th>LR No.</th><th>Vehicle</th>
+                        <th>Invoice</th><th>From → To</th>
+                        <th class="text-end">Weight</th>
+                        <th class="text-end">Freight</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-end">Advance</th>
+                        <th class="text-end">TDS</th>
+                        <th class="text-end">Net</th>
+                    </tr>
+                </thead>
+                <tbody id="vbTripsBody"></tbody>
+                <tfoot id="vbTripsFoot" style="background:#f0f4ff;font-weight:800;font-size:12px;"></tfoot>
+            </table>
+            </div>
+        </div>
+        <!-- Payments Tab -->
+        <div id="bvpane-payments" style="display:none;">
+            <div id="vbPaymentsContent"></div>
+        </div>
+    </div>
+    <div class="modal-footer" style="padding:12px 20px;">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Close</button>
+    </div>
+</div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════
+     EDIT BILL MODAL
+══════════════════════════════════ -->
+<div class="modal fade" id="editBillModal" tabindex="-1" data-bs-backdrop="static">
+<div class="modal-dialog modal-xl modal-dialog-centered">
+<div class="modal-content" style="border-radius:16px;border:none;box-shadow:0 20px 60px rgba(0,0,0,.15);">
+    <div class="modal-head-blue" style="border-radius:16px 16px 0 0;padding:16px 22px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:15px;font-weight:800;color:#fff;display:flex;align-items:center;gap:8px;">
+                    <i class="ri-edit-line"></i> Edit Bill — <span id="ebBillNo"></span>
+                </div>
+                <div style="font-size:11px;color:rgba(255,255,255,.65);margin-top:3px;">Date/Remarks update karo aur trips add/remove karo</div>
+            </div>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+    </div>
+    <div class="modal-body" style="padding:20px 24px;max-height:72vh;overflow-y:auto;">
+        <input type="hidden" id="ebBillId">
+        <input type="hidden" id="ebPartyId">
+
+        <!-- Bill Date + Remarks -->
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+            <div class="step-badge" style="margin-bottom:10px;"><span style="background:rgba(255,255,255,0.3);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;">1</span>Bill Details</div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold fs-13">Bill Date <span class="text-danger">*</span></label>
+                    <input type="date" id="ebBillDate" class="form-control">
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label fw-semibold fs-13">Remarks</label>
+                    <input type="text" id="ebRemarks" class="form-control" placeholder="Optional remark...">
+                </div>
+            </div>
+        </div>
+
+        <!-- Trips Section -->
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+            <div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;">
+                <div class="step-badge" style="margin-bottom:0;"><span style="background:rgba(255,255,255,0.3);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;">2</span>Trips</div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-primary" onclick="ebSelectAll()">Select All</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="ebClearAll()">Clear</button>
+                    <span id="ebSelCount" class="badge bg-primary ms-1">0 selected</span>
+                </div>
+            </div>
+            <div id="ebTripsWrap" style="min-height:80px;">
+                <div class="text-center text-muted py-4" style="font-size:13px;"><i class="ri-loader-4-line me-1"></i>Loading trips...</div>
+            </div>
+        </div>
+
+        <!-- Net Summary -->
+        <div id="ebSummaryRow" class="mt-3" style="display:none;">
+            <div class="net-summary-box">
+                <div class="net-summary-lbl">New Net Bill Amount</div>
+                <div class="net-summary-val" id="ebFinalNet">Rs. 0.00</div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-footer" style="padding:12px 20px;">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+        <button class="btn btn-primary fw-bold px-4" onclick="saveBillEdit()"><i class="ri-save-line me-1"></i>Save Changes</button>
+    </div>
+</div>
 </div>
 </div>
 
@@ -408,6 +713,253 @@ function clearFilters(){
 window.addEventListener('offline',()=>SRV.toast.warning('Internet Disconnected!'));
 window.addEventListener('online', ()=>SRV.toast.success('Back Online!'));
 
+function rupee(n){ return 'Rs.'+parseFloat(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+// ── View Bill ──
+function viewBill(billId) {
+    Swal.fire({title:'Loading...',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+    fetch('RegularBill_generate.php?getBillDetail=1&BillId='+billId)
+    .then(r=>r.json()).then(function(b){
+        Swal.close();
+        if(b.error){ Swal.fire({icon:'error',title:'Error',text:b.error}); return; }
+
+        // Header
+        document.getElementById('vbBillNo').textContent = b.BillNo;
+        var statusMap = {Generated:'badge-generated',PartiallyPaid:'badge-partial',Paid:'badge-paid'};
+        var statusLbl = {Generated:'Generated',PartiallyPaid:'Partial Paid',Paid:'Paid ✓'};
+        document.getElementById('vbBadges').innerHTML =
+            '<span class="'+statusMap[b.BillStatus]+'">'+statusLbl[b.BillStatus]+'</span>';
+
+        // Info tab
+        document.getElementById('vi-billno').textContent   = b.BillNo;
+        document.getElementById('vi-billdate').textContent = b.BillDate ? new Date(b.BillDate).toLocaleDateString('en-IN') : '—';
+        document.getElementById('vi-status').innerHTML     = '<span class="'+statusMap[b.BillStatus]+'">'+statusLbl[b.BillStatus]+'</span>';
+        document.getElementById('vi-remarks').textContent  = b.Remarks || '—';
+        document.getElementById('vi-party').textContent    = b.PartyName || '—';
+        document.getElementById('vi-city').textContent     = b.City    || '—';
+        document.getElementById('vi-address').textContent  = b.Address || '—';
+        document.getElementById('vi-netamt').textContent   = rupee(b.NetBillAmount);
+        document.getElementById('vi-paidamt').textContent  = rupee(b.PaidAmount);
+        document.getElementById('vi-balance').textContent  = rupee(b.Balance);
+        document.getElementById('vi-balance').style.color  = parseFloat(b.Balance)<=0 ? '#16a34a' : '#dc2626';
+
+        // Trips tab
+        var trips = b.Trips || [];
+        var tRows = '', tFr=0, tTotal=0, tAdv=0, tTds=0, tNet=0, tWt=0;
+        trips.forEach(function(t,i){
+            var adv = parseFloat(t.CashAdvance||0)+parseFloat(t.OnlineAdvance||0)||parseFloat(t.AdvanceAmount||0);
+            tFr    += parseFloat(t.FreightAmount||0);
+            tTotal += parseFloat(t.TotalAmount||0);
+            tAdv   += adv;
+            tTds   += parseFloat(t.TDS||0);
+            tNet   += parseFloat(t.NetAmount||0);
+            tWt    += parseFloat(t.TotalWeight||0);
+            tRows += '<tr style="background:'+(i%2===0?'#fff':'#f8fafc')+';">'
+                + '<td class="text-muted" style="font-size:11px;">'+(i+1)+'</td>'
+                + '<td style="white-space:nowrap;">'+t.TripDate+'</td>'
+                + '<td><code style="font-size:11px;">'+String(t.TripId).padStart(4,'0')+'</code></td>'
+                + '<td>'+(t.VehicleNumber||'—')+'</td>'
+                + '<td>'+(t.InvoiceNo||'—')+'</td>'
+                + '<td style="white-space:nowrap;"><span style="color:#1d4ed8;font-weight:600;">'+(t.FromLocation||'?')+'</span>'
+                + ' → <span style="color:#dc2626;font-weight:600;">'+(t.ToLocation||'?')+'</span></td>'
+                + '<td class="text-end">'+parseFloat(t.TotalWeight||0).toFixed(3)+' T</td>'
+                + '<td class="text-end">'+rupee(t.FreightAmount)+'</td>'
+                + '<td class="text-end fw-bold" style="color:#1a237e;">'+rupee(t.TotalAmount)+'</td>'
+                + '<td class="text-end text-danger">'+rupee(adv)+'</td>'
+                + '<td class="text-end text-danger">'+rupee(t.TDS)+'</td>'
+                + '<td class="text-end fw-bold text-primary">'+rupee(t.NetAmount)+'</td>'
+                + '</tr>';
+        });
+        document.getElementById('vbTripsBody').innerHTML = tRows || '<tr><td colspan="12" class="text-center text-muted py-3">No trips</td></tr>';
+        document.getElementById('vbTripsFoot').innerHTML = '<tr>'
+            + '<td colspan="6" class="text-end" style="color:#1a237e;">TOTAL:</td>'
+            + '<td class="text-end">'+tWt.toFixed(3)+' T</td>'
+            + '<td class="text-end">'+rupee(tFr)+'</td>'
+            + '<td class="text-end" style="color:#1a237e;">'+rupee(tTotal)+'</td>'
+            + '<td class="text-end text-danger">'+rupee(tAdv)+'</td>'
+            + '<td class="text-end text-danger">'+rupee(tTds)+'</td>'
+            + '<td class="text-end text-primary">'+rupee(tNet)+'</td>'
+            + '</tr>';
+
+        // Payments tab
+        var pmts = b.Payments || [];
+        var pHtml = '';
+        if(pmts.length === 0){
+            pHtml = '<div class="text-center text-muted py-4" style="font-size:13px;"><i class="ri-money-rupee-circle-line me-1"></i>Koi payment nahi aayi abhi.</div>';
+        } else {
+            pHtml = '<div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:13px;">'
+                + '<thead style="background:#f0fdf4;"><tr>'
+                + '<th>#</th><th>Date</th><th>Mode</th><th>Reference</th><th class="text-end">Amount</th><th>Remarks</th>'
+                + '</tr></thead><tbody>';
+            var total = 0;
+            pmts.forEach(function(p,i){
+                total += parseFloat(p.Amount||0);
+                pHtml += '<tr><td class="text-muted">'+(i+1)+'</td>'
+                    + '<td>'+p.PaymentDate+'</td>'
+                    + '<td><span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'+p.PaymentMode+'</span></td>'
+                    + '<td>'+(p.ReferenceNo||'—')+'</td>'
+                    + '<td class="text-end fw-bold" style="color:#16a34a;">'+rupee(p.Amount)+'</td>'
+                    + '<td style="font-size:11px;color:#64748b;">'+(p.Remarks||'—')+'</td>'
+                    + '</tr>';
+            });
+            pHtml += '</tbody><tfoot style="background:#f0fdf4;font-weight:800;">'
+                + '<tr><td colspan="4" class="text-end" style="color:#15803d;">Total Paid:</td>'
+                + '<td class="text-end" style="color:#15803d;">'+rupee(total)+'</td><td></td></tr>'
+                + '</tfoot></table></div>';
+        }
+        document.getElementById('vbPaymentsContent').innerHTML = pHtml;
+
+        bvSwitch('info', document.getElementById('bvbtn-info'));
+        new bootstrap.Modal(document.getElementById('viewBillModal')).show();
+    })
+    .catch(()=>Swal.fire({icon:'error',title:'Error',text:'Could not load bill details.'}));
+}
+
+function bvSwitch(name, btn){
+    ['info','trips','payments'].forEach(function(t){
+        document.getElementById('bvbtn-'+t).className = 'bv-tab-btn';
+        document.getElementById('bvpane-'+t).style.display = 'none';
+    });
+    btn.classList.add('bv-tab-active');
+    document.getElementById('bvpane-'+name).style.display = 'block';
+}
+
+// ── Edit Bill ──
+var ebTrips = [], ebCurrentIds = [];
+
+function editBill(billId, billNo, billDate, remarks, partyId){
+    document.getElementById('ebBillId').value       = billId;
+    document.getElementById('ebPartyId').value      = partyId;
+    document.getElementById('ebBillNo').textContent = billNo;
+    document.getElementById('ebBillDate').value     = billDate;
+    document.getElementById('ebRemarks').value      = remarks;
+    document.getElementById('ebSummaryRow').style.display = 'none';
+    document.getElementById('ebTripsWrap').innerHTML = '<div class="text-center text-muted py-4"><i class="ri-loader-4-line me-1"></i>Loading trips...</div>';
+    new bootstrap.Modal(document.getElementById('editBillModal')).show();
+    // Load trips
+    fetch('RegularBill_generate.php?getEditTrips=1&BillId='+billId+'&partyId='+partyId)
+    .then(r=>r.json()).then(function(d){
+        ebCurrentIds = d.currentIds || [];
+        // Merge: current + unbilled (deduplicated)
+        var curMap = {};
+        (d.current||[]).forEach(t=>curMap[t.TripId]=true);
+        ebTrips = [...(d.current||[]), ...(d.unbilled||[]).filter(t=>!curMap[t.TripId])];
+        ebRender();
+        ebUpdateTotals();
+    })
+    .catch(()=>{ document.getElementById('ebTripsWrap').innerHTML='<div class="text-center text-danger py-3">Load failed</div>'; });
+}
+
+function ebRender(){
+    if(!ebTrips.length){
+        document.getElementById('ebTripsWrap').innerHTML = '<div class="text-center text-muted py-4">No trips available</div>';
+        return;
+    }
+    var html = '<div class="table-responsive"><table class="table table-hover mb-0 trip-select-table"><thead><tr>'
+        + '<th style="width:36px;"><input type="checkbox" id="ebChkAll" onchange="ebToggleAll(this)"></th>'
+        + '<th>Date</th><th>LR No.</th><th>Vehicle</th><th>Invoice</th>'
+        + '<th>From → To</th>'
+        + '<th class="text-end">Weight</th><th class="text-end">Freight</th>'
+        + '<th class="text-end">Total</th><th class="text-end">Advance</th>'
+        + '<th class="text-end">TDS</th><th class="text-end">Net</th>'
+        + '</tr></thead><tbody>';
+    ebTrips.forEach(function(t,i){
+        var inCurrent = ebCurrentIds.indexOf(parseInt(t.TripId)) !== -1;
+        var adv = parseFloat(t.CashAdvance||0)+parseFloat(t.OnlineAdvance||0)||parseFloat(t.AdvanceAmount||0);
+        html += '<tr style="background:'+(inCurrent?'#eff6ff':'#fff')+';">'
+            + '<td class="text-center"><input type="checkbox" class="ebChk" data-idx="'+i+'" '+(inCurrent?'checked':'')+' onchange="ebUpdateTotals()"></td>'
+            + '<td style="font-size:12px;white-space:nowrap;">'+t.TripDate+'</td>'
+            + '<td><code style="font-size:11px;">'+String(t.TripId).padStart(4,'0')+'</code></td>'
+            + '<td style="font-size:12px;">'+(t.VehicleNumber||'—')+'</td>'
+            + '<td style="font-size:12px;">'+(t.InvoiceNo||'—')+'</td>'
+            + '<td style="font-size:12px;white-space:nowrap;"><span style="color:#1d4ed8;font-weight:600;">'+(t.FromLocation||'?')+'</span>'
+            + ' → <span style="color:#dc2626;font-weight:600;">'+(t.ToLocation||'?')+'</span></td>'
+            + '<td class="text-end" style="font-size:12px;">'+parseFloat(t.TotalWeight||0).toFixed(3)+' T</td>'
+            + '<td class="text-end" style="font-size:12px;">'+parseFloat(t.FreightAmount||0).toFixed(2)+'</td>'
+            + '<td class="text-end fw-bold" style="font-size:12px;color:#1a237e;">'+parseFloat(t.TotalAmount||0).toFixed(2)+'</td>'
+            + '<td class="text-end" style="font-size:12px;color:#dc2626;">'+adv.toFixed(2)+'</td>'
+            + '<td class="text-end" style="font-size:12px;">'+parseFloat(t.TDS||0).toFixed(2)+'</td>'
+            + '<td class="text-end fw-bold text-primary" style="font-size:12px;">'+parseFloat(t.NetAmount||0).toFixed(2)+'</td>'
+            + '</tr>';
+    });
+    html += '</tbody><tfoot style="background:#f0f4ff;"><tr class="fw-bold">'
+        + '<td colspan="6" class="text-end" style="color:#1a237e;">TOTAL:</td>'
+        + '<td class="text-end" id="ebTWt">0.000 T</td>'
+        + '<td class="text-end" id="ebTFr">0.00</td>'
+        + '<td class="text-end" id="ebTTotal">0.00</td>'
+        + '<td class="text-end" id="ebTAdv">0.00</td>'
+        + '<td class="text-end" id="ebTTds">0.00</td>'
+        + '<td class="text-end text-primary" id="ebTNet">0.00</td>'
+        + '</tr></tfoot></table></div>';
+    document.getElementById('ebTripsWrap').innerHTML = html;
+    ebUpdateTotals();
+}
+
+function ebToggleAll(cb){ document.querySelectorAll('.ebChk').forEach(c=>c.checked=cb.checked); ebUpdateTotals(); }
+function ebSelectAll(){ document.querySelectorAll('.ebChk').forEach(c=>c.checked=true); ebUpdateTotals(); }
+function ebClearAll(){ document.querySelectorAll('.ebChk').forEach(c=>c.checked=false); if(document.getElementById('ebChkAll')) document.getElementById('ebChkAll').checked=false; ebUpdateTotals(); }
+
+function ebUpdateTotals(){
+    var fr=0,total=0,adv=0,tds=0,net=0,wt=0,cnt=0;
+    document.querySelectorAll('.ebChk:checked').forEach(function(chk){
+        var t = ebTrips[chk.dataset.idx];
+        fr    += parseFloat(t.FreightAmount||0);
+        total += parseFloat(t.TotalAmount||0);
+        adv   += parseFloat(t.CashAdvance||0)+parseFloat(t.OnlineAdvance||0)||parseFloat(t.AdvanceAmount||0);
+        tds   += parseFloat(t.TDS||0);
+        net   += parseFloat(t.NetAmount||0);
+        wt    += parseFloat(t.TotalWeight||0);
+        cnt++;
+    });
+    var s = function(id,v){ if(document.getElementById(id)) document.getElementById(id).textContent=v; };
+    s('ebTWt',   wt.toFixed(3)+' T');
+    s('ebTFr',   fr.toFixed(2));
+    s('ebTTotal',total.toFixed(2));
+    s('ebTAdv',  adv.toFixed(2));
+    s('ebTTds',  tds.toFixed(2));
+    s('ebTNet',  net.toFixed(2));
+    if(document.getElementById('ebSelCount')) document.getElementById('ebSelCount').textContent = cnt+' selected';
+    if(document.getElementById('ebFinalNet')) document.getElementById('ebFinalNet').textContent = 'Rs. '+net.toLocaleString('en-IN',{minimumFractionDigits:2});
+    document.getElementById('ebSummaryRow').style.display = cnt>0 ? 'block' : 'none';
+}
+
+function saveBillEdit(){
+    var billId   = document.getElementById('ebBillId').value;
+    var billDate = document.getElementById('ebBillDate').value;
+    var remarks  = document.getElementById('ebRemarks').value;
+    if(!billDate){ SRV.toast.warning('Bill date required!'); return; }
+    var tripIds = [];
+    document.querySelectorAll('.ebChk:checked').forEach(function(chk){ tripIds.push(ebTrips[chk.dataset.idx].TripId); });
+    if(!tripIds.length){ SRV.toast.warning('Kam se kam ek trip select karo!'); return; }
+    var net = document.getElementById('ebFinalNet') ? document.getElementById('ebFinalNet').textContent : '';
+    Swal.fire({
+        title:'Bill update karo?', icon:'question',
+        html:'<strong>'+tripIds.length+'</strong> trips selected.<br>Net Amount: <strong class="text-primary">'+net+'</strong>',
+        showCancelButton:true, confirmButtonText:'Save', confirmButtonColor:'#1a237e', cancelButtonColor:'#64748b'
+    }).then(function(r){
+        if(!r.isConfirmed) return;
+        Swal.fire({title:'Saving...',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+        var fd = new FormData();
+        fd.append('updateBill',1);
+        fd.append('BillId',   billId);
+        fd.append('BillDate', billDate);
+        fd.append('Remarks',  remarks);
+        fd.append('tripIds',  JSON.stringify(tripIds));
+        fetch('RegularBill_generate.php',{method:'POST',body:fd})
+        .then(r=>r.json()).then(function(res){
+            Swal.close();
+            if(res.status==='success'){
+                bootstrap.Modal.getInstance(document.getElementById('editBillModal')).hide();
+                SRV.toast.success('Bill updated successfully!');
+                setTimeout(()=>location.reload(), 1000);
+            } else {
+                Swal.fire({icon:'error',title:'Error',text:res.msg});
+            }
+        })
+        .catch(()=>Swal.fire({icon:'error',title:'Error',text:'Save failed.'}));
+    });
+}
+
 function loadTrips(){
     var partyId=$('#selParty').val();
     if(!partyId){ Swal.fire({icon:'warning',title:'Please select a party!',confirmButtonColor:'#1a237e'}); return; }
@@ -487,7 +1039,18 @@ function updateTotals(){
 function generateBill(){
     var partyId=$('#selParty').val(), tripIds=[];
     $('.tripChk:checked').each(function(){ tripIds.push(trips[$(this).data('idx')].TripId); });
-    if(!tripIds.length) return;
+
+    // ── SRV Validation ──
+    const valid = SRV.validate(document.body, {
+        'selParty':  { required: [true, 'Please select a party.'], selectRequired: [true, 'Please select a party.'] },
+        'billDate':  { required: [true, 'Bill date is required.'], date: [true, 'Enter a valid date.'] },
+    });
+    if (!valid) return;
+
+    if(!tripIds.length){
+        SRV.toast.warning('Please select at least one trip.');
+        return;
+    }
     var net=$('#finalNet').text();
     Swal.fire({
         title:'Generate Bill?',icon:'question',
@@ -514,4 +1077,5 @@ function generateBill(){
     });
 }
 </script>
+<script src="/Sama_Roadlines/assets/js/validation.js"></script>
 <?php require_once "../layout/footer.php"; ?>

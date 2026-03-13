@@ -6,10 +6,18 @@ function isActive(string $p): string
     return $currentPage === $p ? ' active' : '';
 }
 
-$tripPages = ['RegularTrips', 'AgentTrips', 'DirectTrips', 'RegularTripForm', 'AgentTripForm'];
-$tripOpen  = in_array($currentPage, $tripPages);
-$billPages = ['RegularBill_generate'];
-$billOpen  = in_array($currentPage, $billPages);
+$tripPages    = ['RegularTrips', 'AgentTrips', 'DirectTrips', 'TripRegister'];
+$tripOpen     = in_array($currentPage, $tripPages);
+
+$newTripPages = ['RegularTripForm', 'AgentTripForm'];
+$newTripOpen  = in_array($currentPage, $newTripPages);
+
+$reportPages  = ['PartyReport', 'OwnerReport'];
+$reportOpen   = in_array($currentPage, $reportPages);
+
+$billPages    = ['RegularBill_generate'];
+$billOpen     = in_array($currentPage, $billPages);
+
 ?>
 <style>
     .sama-brand-logo {
@@ -104,6 +112,69 @@ $billOpen  = in_array($currentPage, $billPages);
         padding-top: 6px !important;
         padding-bottom: 6px !important;
     }
+
+    .menu-badge-new {
+        font-size: 9px;
+        font-weight: 800;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: #fff;
+        padding: 2px 6px;
+        border-radius: 20px;
+        margin-left: 6px;
+        letter-spacing: 0.3px;
+        animation: pulse-badge 2s infinite;
+    }
+
+    @keyframes pulse-badge {
+
+        0%,
+        100% {
+            opacity: 1
+        }
+
+        50% {
+            opacity: .7
+        }
+    }
+
+    .sidebar-user-footer {
+        padding: 12px 16px;
+        border-top: 1px solid #e9ecef;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #f8fafc;
+        margin-top: auto;
+    }
+
+    .sidebar-user-avatar {
+        width: 34px;
+        height: 34px;
+        background: linear-gradient(135deg, #0f172a, #1d4ed8);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 17px;
+        flex-shrink: 0;
+    }
+
+    .sidebar-user-name {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #1e293b;
+        line-height: 1.2;
+    }
+
+    .sidebar-user-role {
+        font-size: 10.5px;
+        color: #94a3b8;
+    }
+
+    [data-toggled="icon-overlay"] .sidebar-user-footer,
+    [data-toggled="close"] .sidebar-user-footer {
+        display: none;
+    }
 </style>
 
 <aside class="app-sidebar sticky" id="sidebar">
@@ -131,7 +202,7 @@ $billOpen  = in_array($currentPage, $billPages);
 
             <ul class="main-menu">
 
-                <!-- MASTER -->
+                <!-- ══════════ MASTER ══════════ -->
                 <li class="slide__category"><span class="category-name">Master</span></li>
 
                 <li class="slide">
@@ -159,76 +230,78 @@ $billOpen  = in_array($currentPage, $billPages);
                     </a>
                 </li>
 
-                <!-- TRIPS -->
+                <!-- ══════════ TRIP SECTION ══════════ -->
                 <li class="slide__category"><span class="category-name">Trip Section</span></li>
 
+                <!-- 1. Trip Register — view/list only -->
                 <li class="slide has-sub<?= $tripOpen ? ' open' : '' ?>">
                     <a href="javascript:void(0);" class="side-menu__item<?= $tripOpen ? ' active' : '' ?>">
-                        <i class="ri-road-map-line side-menu__icon fs-18"></i>
-                        <span class="side-menu__label">Trips</span>
+                        <i class="ri-file-list-2-line side-menu__icon fs-18"></i>
+                        <span class="side-menu__label">Trip Register</span>
                         <i class="ri-arrow-right-s-line side-menu__angle"></i>
                     </a>
                     <ul class="slide-menu child1">
-                        <li class="slide side-menu__label1"><a href="javascript:void(0)">Trips</a></li>
-
-                        <!-- Lists -->
+                        <li class="slide side-menu__label1"><a href="javascript:void(0)">Trip Register</a></li>
                         <li class="slide">
                             <a href="/Sama_Roadlines/views/pages/RegularTrips.php" class="side-menu__item<?= isActive('RegularTrips') ?>">
-                                <i class="ri-file-list-line me-2"></i>
+                                <i class="ri-file-list-line me-2" style="color:#1d4ed8;"></i>
                                 <span class="side-menu__label">Regular Trips</span>
                             </a>
                         </li>
                         <li class="slide">
                             <a href="/Sama_Roadlines/views/pages/AgentTrips.php" class="side-menu__item<?= isActive('AgentTrips') ?>">
-                                <i class="ri-user-star-line me-2"></i>
+                                <i class="ri-user-star-line me-2" style="color:#7c3aed;"></i>
                                 <span class="side-menu__label">Agent Trips</span>
                             </a>
                         </li>
                         <li class="slide">
                             <a href="/Sama_Roadlines/views/pages/DirectTrips.php" class="side-menu__item<?= isActive('DirectTrips') ?>">
-                                <i class="ri-arrow-right-circle-line me-2 text-warning"></i>
+                                <i class="ri-arrow-right-circle-line me-2" style="color:#d97706;"></i>
                                 <span class="side-menu__label">Direct Pay Trips</span>
                             </a>
                         </li>
+                    </ul>
+                </li>
 
-                        <!-- Divider + New buttons -->
-                        <li class="slide" style="margin-top:6px;padding-top:6px;border-top:1px solid #f1f5f9;">
+                <!-- 2. New Trip — add forms only, SEPARATE -->
+                <li class="slide has-sub<?= $newTripOpen ? ' open' : '' ?>">
+                    <a href="javascript:void(0);" class="side-menu__item<?= $newTripOpen ? ' active' : '' ?>">
+                        <i class="ri-add-box-line side-menu__icon fs-18" style="color:#16a34a;"></i>
+                        <span class="side-menu__label" style="color:#16a34a;font-weight:700;">New Trip</span>
+                        <i class="ri-arrow-right-s-line side-menu__angle"></i>
+                    </a>
+                    <ul class="slide-menu child1">
+                        <li class="slide side-menu__label1"><a href="javascript:void(0)">New Trip</a></li>
+                        <li class="slide">
                             <a href="/Sama_Roadlines/views/pages/RegularTripForm.php"
                                 class="side-menu__item<?= isActive('RegularTripForm') ?>">
                                 <i class="ri-add-circle-line me-2" style="color:#16a34a;"></i>
-                                <span class="side-menu__label" style="color:#16a34a;">+ New Regular Trip</span>
+                                <span class="side-menu__label">New Regular Trip</span>
                             </a>
                         </li>
                         <li class="slide">
                             <a href="/Sama_Roadlines/views/pages/AgentTripForm.php"
                                 class="side-menu__item<?= isActive('AgentTripForm') ?>">
                                 <i class="ri-add-circle-line me-2" style="color:#d97706;"></i>
-                                <span class="side-menu__label" style="color:#d97706;">+ New Agent Trip</span>
+                                <span class="side-menu__label">New Agent Trip</span>
                             </a>
                         </li>
                     </ul>
                 </li>
 
-                <!-- PARTY BILLING -->
+                <!-- ══════════ PARTY BILLING ══════════ -->
                 <li class="slide__category"><span class="category-name">Party Billing</span></li>
 
-                <li class="slide has-sub<?= $billOpen ? ' open' : '' ?>">
-                    <a href="javascript:void(0);" class="side-menu__item<?= $billOpen ? ' active' : '' ?>">
+                <li class="slide">
+                    <a href="/Sama_Roadlines/views/pages/RegularBill_generate.php" class="side-menu__item<?= $billOpen ? ' active' : '' ?>">
                         <i class="ri-bill-line side-menu__icon fs-18"></i>
-                        <span class="side-menu__label">Generate Bills</span>
-                        <i class="ri-arrow-right-s-line side-menu__angle"></i>
+                        <span class="side-menu__label">Generate Regular Bills</span>
+                      
                     </a>
-                    <ul class="slide-menu child1">
-                        <li class="slide side-menu__label1"><a href="javascript:void(0)">Bills</a></li>
-                        <li class="slide">
-                            <a href="/Sama_Roadlines/views/pages/RegularBill_generate.php" class="side-menu__item<?= isActive('RegularBill_generate') ?>">
-                                <i class="ri-file-list-3-line me-2"></i>
-                                <span class="side-menu__label">Regular Bills</span>
-                            </a>
-                        </li>
-                    </ul>
+                    
                 </li>
-  <li class="slide">
+
+                <li class="slide">
                     <a href="/Sama_Roadlines/views/pages/AgentPayments.php" class="side-menu__item<?= isActive('AgentPayments') ?>">
                         <i class="ri-secure-payment-line side-menu__icon fs-18"></i>
                         <span class="side-menu__label">Agent Payments</span>
@@ -247,7 +320,7 @@ $billOpen  = in_array($currentPage, $billPages);
                     </a>
                 </li>
 
-                <!-- OWNER PAYMENTS -->
+                <!-- ══════════ OWNER PAYMENTS ══════════ -->
                 <li class="slide__category"><span class="category-name">Owner Payments</span></li>
 
                 <li class="slide">
@@ -263,7 +336,7 @@ $billOpen  = in_array($currentPage, $billPages);
                     </a>
                 </li>
 
-                <!-- COMMISSION -->
+                <!-- ══════════ COMMISSION ══════════ -->
                 <li class="slide__category"><span class="category-name">Commission</span></li>
 
                 <li class="slide">
@@ -273,7 +346,33 @@ $billOpen  = in_array($currentPage, $billPages);
                     </a>
                 </li>
 
-                <!-- ACCOUNT -->
+                <!-- ══════════ GENERAL TRIP REGISTER ══════════ -->
+                <li class="slide__category"><span class="category-name">Trip Register</span></li>
+
+                <li class="slide">
+                    <a href="/Sama_Roadlines/views/pages/TripRegister.php" class="side-menu__item<?= isActive('TripRegister') ?>">
+                        <i class="ri-file-list-3-line side-menu__icon fs-18" style="color:#0284c7;"></i>
+                        <span class="side-menu__label">General Trip Register</span>
+                    </a>
+                </li>
+
+                <!-- ══════════ REPORTS ══════════ -->
+                <li class="slide__category"><span class="category-name">Reports</span></li>
+
+                <li class="slide">
+                    <a href="/Sama_Roadlines/views/pages/PartyReport.php" class="side-menu__item<?= isActive('PartyReport') ?>">
+                        <i class="ri-group-2-line side-menu__icon fs-18" style="color:#6366f1;"></i>
+                        <span class="side-menu__label">Party-wise Report</span>
+                    </a>
+                </li>
+                <li class="slide">
+                    <a href="/Sama_Roadlines/views/pages/OwnerReport.php" class="side-menu__item<?= isActive('OwnerReport') ?>">
+                        <i class="ri-user-star-line side-menu__icon fs-18" style="color:#15803d;"></i>
+                        <span class="side-menu__label">Owner-wise Report</span>
+                    </a>
+                </li>
+
+                <!-- ══════════ ACCOUNT ══════════ -->
                 <li class="slide__category"><span class="category-name">Account</span></li>
 
                 <li class="slide">
@@ -292,5 +391,14 @@ $billOpen  = in_array($currentPage, $billPages);
             </div>
 
         </nav>
+
+        <div class="sidebar-user-footer">
+            <div class="sidebar-user-avatar">👤</div>
+            <div>
+                <div class="sidebar-user-name"><?= htmlspecialchars($_SESSION['username'] ?? 'Admin') ?></div>
+                <div class="sidebar-user-role">Administrator</div>
+            </div>
+        </div>
+
     </div>
 </aside>

@@ -60,7 +60,7 @@ class Commission {
             SELECT t.TripId, t.TripDate, t.FromLocation, t.ToLocation,
                    t.FreightAmount, t.TripType, t.FreightPaymentToOwnerStatus,
                    v.VehicleNumber,
-                   p1.PartyName AS ConsignerName, t.ConsigneeName, p3.PartyName AS AgentName,
+                   p1.PartyName AS ConsignerName, p2.PartyName AS ConsigneeName, p3.PartyName AS AgentName,
                    b.BillNo, b.BillStatus AS RegBillStatus,
                    NULL AS AgentBillNo, NULL AS AgentBillStatus,
                    tc.TripCommissionId, tc.CommissionAmount, tc.RecoveryFrom, tc.CommissionStatus
@@ -100,7 +100,7 @@ class Commission {
             SELECT tc.*,
                    t.TripDate, t.FromLocation, t.ToLocation, t.FreightAmount, t.TripType, t.FreightPaymentToOwnerStatus,
                    v.VehicleNumber,
-                   p1.PartyName AS ConsignerName, t.ConsigneeName, p3.PartyName AS AgentName,
+                   p1.PartyName AS ConsignerName, p2.PartyName AS ConsigneeName, p3.PartyName AS AgentName,
                    b.BillNo, b.BillStatus AS RegBillStatus,
                    NULL AS AgentBillNo, NULL AS AgentBillStatus
             FROM TripCommission tc

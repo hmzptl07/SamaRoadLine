@@ -91,7 +91,7 @@ class PartyAdvanceLogic {
                 paa.AdjustmentDate AS txn_date,
                 'OUT'             AS txn_type,
                 paa.AdjustedAmount AS amount,
-                paa.BillType      AS bill_type,
+                paa.AdjustmentType AS bill_type,
                 paa.Remarks,
                 paa.PartyAdvanceId,
                 b.BillNo,
@@ -100,9 +100,9 @@ class PartyAdvanceLogic {
                 v.VehicleNumber
             FROM partyadvanceadjustment paa
             JOIN partyadvance pa ON paa.PartyAdvanceId = pa.PartyAdvanceId
-            LEFT JOIN Bill          b ON paa.BillId   = b.BillId       AND paa.BillType = 'Regular'
-            LEFT JOIN TripMaster    t ON paa.BillId   = t.TripId        AND paa.BillType = 'AgentTrip'
-            LEFT JOIN VehicleMaster v ON t.VehicleId  = v.VehicleId
+            LEFT JOIN bill          b ON paa.BillId      = b.BillId    AND paa.AdjustmentType = 'RegularBill'
+            LEFT JOIN TripMaster    t ON paa.AgentTripId = t.TripId    AND paa.AdjustmentType = 'AgentTripPayment'
+            LEFT JOIN VehicleMaster v ON t.VehicleId     = v.VehicleId
             WHERE pa.PartyId = ?
             ORDER BY paa.AdjustmentDate ASC, paa.AdjustmentId ASC
         ");
@@ -111,7 +111,7 @@ class PartyAdvanceLogic {
 
         /* Build reference label for OUT entries */
         foreach ($adjustments as &$adj) {
-            if ($adj['bill_type'] === 'Regular')
+            if ($adj['bill_type'] === 'RegularBill')
                 $adj['ref_label'] = $adj['BillNo'] ?? '—';
             else
                 $adj['ref_label'] = ($adj['VehicleNumber'] ?? '') . ($adj['route'] ? ' | ' . $adj['route'] : '');
@@ -169,7 +169,7 @@ class PartyAdvanceLogic {
                    COALESCE(SUM(ap.Amount),0) AS paid
             FROM TripMaster t
             LEFT JOIN VehicleMaster v  ON t.VehicleId = v.VehicleId
-            LEFT JOIN AgentPayment  ap ON t.TripId    = ap.TripId
+            LEFT JOIN agentpayment  ap ON t.TripId    = ap.TripId
             WHERE t.AgentId = ? AND t.TripType = 'Agent'
             GROUP BY t.TripId
             HAVING (netamt - paid) > 0.01
@@ -186,29 +186,36 @@ class PartyAdvanceLogic {
        ADJUST CONSIGNER → Regular Bill
     ══════════════════════════════════════════ */
     public static function adjustConsigner(PDO $pdo, array $data): array {
-        $advId   = intval($data['PartyAdvanceId']);
+        $partyId = intval($data['PartyId'] ?? 0);
         $billId  = intval($data['BillId'] ?? 0);
         $adjAmt  = floatval($data['AdjustedAmount'] ?? 0);
         $adjDate = $data['AdjustmentDate'] ?? date('Y-m-d');
         $note    = trim($data['Remarks'] ?? '');
-        if ($adjAmt <= 0 || !$billId) return ['status'=>'error','msg'=>'Invalid amount or bill'];
+        if ($adjAmt <= 0 || !$billId || !$partyId)
+            return ['status'=>'error','msg'=>'Invalid amount or bill'];
         try {
             $pdo->beginTransaction();
-            [$a, $newRem] = self::_debit($pdo, $advId, $adjAmt);
-            $pdo->prepare("INSERT INTO partyadvanceadjustment (PartyAdvanceId,BillId,AgentBillId,BillType,AdjustedAmount,AdjustmentDate,Remarks) VALUES (?,?,NULL,'Regular',?,?,?)")
-                ->execute([$advId,$billId,$adjAmt,$adjDate,$note]);
-            $ref  = 'ADV-'.str_pad($advId,4,'0',STR_PAD_LEFT);
-            $remk = 'Advance adjusted'.($note?' — '.$note:'');
-            $pdo->prepare("INSERT INTO billpayment (BillId,PaymentDate,Amount,PaymentMode,ReferenceNo,Remarks) VALUES (?,?,?,'Other',?,?)")
-                ->execute([$billId,$adjDate,$adjAmt,$ref,$remk]);
+            /* FIFO: deduct from oldest open advances first */
+            $remaining = $adjAmt;
+            $usedAdvances = self::_fifoDebit($pdo, $partyId, $adjAmt);
+            foreach ($usedAdvances as [$advId, $usedAmt]) {
+                $ref  = 'ADV-'.str_pad($advId,4,'0',STR_PAD_LEFT);
+                $remk = 'Advance adjusted'.($note?' — '.$note:'');
+                $pdo->prepare("INSERT INTO partyadvanceadjustment (PartyAdvanceId,BillId,AgentTripId,AdjustmentType,AdjustedAmount,AdjustmentDate,Remarks) VALUES (?,?,NULL,'RegularBill',?,?,?)")
+                    ->execute([$advId,$billId,$usedAmt,$adjDate,$note]);
+                $pdo->prepare("INSERT INTO billpayment (BillId,PaymentDate,Amount,PaymentMode,ReferenceNo,Remarks) VALUES (?,?,?,'Other',?,?)")
+                    ->execute([$billId,$adjDate,$usedAmt,$ref,$remk]);
+            }
+            /* Update bill status */
             $r = $pdo->prepare("SELECT b.NetBillAmount, COALESCE(SUM(p.Amount),0) AS Paid FROM Bill b LEFT JOIN billpayment p ON b.BillId=p.BillId WHERE b.BillId=? GROUP BY b.BillId");
             $r->execute([$billId]); $rv=$r->fetch(PDO::FETCH_ASSOC);
             $paid=floatval($rv['Paid']); $net=floatval($rv['NetBillAmount']);
             $bs=$paid>=$net?'Paid':($paid>0?'PartiallyPaid':'Generated');
             $pdo->prepare("UPDATE Bill SET BillStatus=? WHERE BillId=?")->execute([$bs,$billId]);
-            if ($bs==='Paid') $pdo->prepare("UPDATE TripMaster SET TripStatus='Closed' WHERE TripId IN (SELECT TripId FROM BillTrip WHERE BillId=?)")->execute([$billId]);
+            if ($bs==='Paid') $pdo->prepare("UPDATE TripMaster SET TripStatus='Closed' WHERE TripId IN (SELECT TripId FROM billtrip WHERE BillId=?)")->execute([$billId]);
+            $totalRemaining = self::getPartyTotalBalance($pdo, $partyId);
             $pdo->commit();
-            return ['status'=>'success','newRemaining'=>$newRem];
+            return ['status'=>'success','newRemaining'=>$totalRemaining];
         } catch (Exception $e) { $pdo->rollBack(); return ['status'=>'error','msg'=>$e->getMessage()]; }
     }
 
@@ -216,23 +223,28 @@ class PartyAdvanceLogic {
        ADJUST AGENT → Agent Trip
     ══════════════════════════════════════════ */
     public static function adjustAgent(PDO $pdo, array $data): array {
-        $advId   = intval($data['PartyAdvanceId']);
+        $partyId = intval($data['PartyId'] ?? 0);
         $tripId  = intval($data['TripId'] ?? 0);
         $adjAmt  = floatval($data['AdjustedAmount'] ?? 0);
         $adjDate = $data['AdjustmentDate'] ?? date('Y-m-d');
         $note    = trim($data['Remarks'] ?? '');
-        if ($adjAmt <= 0 || !$tripId) return ['status'=>'error','msg'=>'Invalid amount or trip'];
+        if ($adjAmt <= 0 || !$tripId || !$partyId)
+            return ['status'=>'error','msg'=>'Invalid amount or trip'];
         try {
             $pdo->beginTransaction();
-            [$a, $newRem] = self::_debit($pdo, $advId, $adjAmt);
-            $pdo->prepare("INSERT INTO partyadvanceadjustment (PartyAdvanceId,BillId,AgentBillId,BillType,AdjustedAmount,AdjustmentDate,Remarks) VALUES (?,?,NULL,'AgentTrip',?,?,?)")
-                ->execute([$advId,$tripId,$adjAmt,$adjDate,$note]);
-            $ref  = 'ADV-'.str_pad($advId,4,'0',STR_PAD_LEFT);
-            $remk = 'Advance adjusted'.($note?' — '.$note:'');
-            $pdo->prepare("INSERT INTO AgentPayment (TripId,PaymentDate,PaymentMode,Amount,Reference,Remarks) VALUES (?,?,'Other',?,?,?)")
-                ->execute([$tripId,$adjDate,$adjAmt,$ref,$remk]);
+            /* FIFO: deduct from oldest open advances first */
+            $usedAdvances = self::_fifoDebit($pdo, $partyId, $adjAmt);
+            foreach ($usedAdvances as [$advId, $usedAmt]) {
+                $ref  = 'ADV-'.str_pad($advId,4,'0',STR_PAD_LEFT);
+                $remk = 'Advance adjusted'.($note?' — '.$note:'');
+                $pdo->prepare("INSERT INTO partyadvanceadjustment (PartyAdvanceId,BillId,AgentTripId,AdjustmentType,AdjustedAmount,AdjustmentDate,Remarks) VALUES (?,NULL,?,'AgentTripPayment',?,?,?)")
+                    ->execute([$advId,$tripId,$usedAmt,$adjDate,$note]);
+                $pdo->prepare("INSERT INTO agentpayment (TripId,PaymentDate,PaymentMode,Amount,Reference,Remarks) VALUES (?,?,'Other',?,?,?)")
+                    ->execute([$tripId,$adjDate,$usedAmt,$ref,$remk]);
+            }
+            $totalRemaining = self::getPartyTotalBalance($pdo, $partyId);
             $pdo->commit();
-            return ['status'=>'success','newRemaining'=>$newRem];
+            return ['status'=>'success','newRemaining'=>$totalRemaining];
         } catch (Exception $e) { $pdo->rollBack(); return ['status'=>'error','msg'=>$e->getMessage()]; }
     }
 
@@ -257,18 +269,45 @@ class PartyAdvanceLogic {
         ];
     }
 
-    private static function _debit(PDO $pdo, int $advId, float $amt): array {
-        $s = $pdo->prepare("SELECT * FROM partyadvance WHERE PartyAdvanceId = ? FOR UPDATE");
-        $s->execute([$advId]);
-        $a = $s->fetch(PDO::FETCH_ASSOC);
-        if (!$a) throw new Exception('Advance not found');
-        if ($amt > floatval($a['RemainingAmount']))
-            throw new Exception('Exceeds available balance (Rs.'.number_format($a['RemainingAmount'],2).')');
-        $newAdj = floatval($a['AdjustedAmount']) + $amt;
-        $newRem = max(0, floatval($a['Amount']) - $newAdj);
-        $status = $newRem <= 0 ? 'FullyAdjusted' : ($newAdj > 0 ? 'PartiallyAdjusted' : 'Open');
-        $pdo->prepare("UPDATE partyadvance SET AdjustedAmount=?,RemainingAmount=?,Status=? WHERE PartyAdvanceId=?")
-            ->execute([$newAdj, $newRem, $status, $advId]);
-        return [$a, $newRem];
+    /**
+     * FIFO: Deduct $totalAmt from party's oldest open advances first.
+     * Returns array of [$advId, $usedAmt] pairs actually debited.
+     */
+    private static function _fifoDebit(PDO $pdo, int $partyId, float $totalAmt): array {
+        /* Lock all open advances for this party, oldest first */
+        $s = $pdo->prepare("
+            SELECT * FROM partyadvance
+            WHERE PartyId = ? AND Status != 'FullyAdjusted' AND RemainingAmount > 0
+            ORDER BY AdvanceDate ASC, PartyAdvanceId ASC
+            FOR UPDATE
+        ");
+        $s->execute([$partyId]);
+        $advances = $s->fetchAll(PDO::FETCH_ASSOC);
+
+        $totalAvail = array_sum(array_column($advances, 'RemainingAmount'));
+        if ($totalAmt > $totalAvail)
+            throw new Exception('Exceeds total available balance (Rs.'.number_format($totalAvail,2).')');
+
+        $used = [];
+        $leftToDeduct = $totalAmt;
+        foreach ($advances as $a) {
+            if ($leftToDeduct <= 0) break;
+            $avail   = floatval($a['RemainingAmount']);
+            $deduct  = min($avail, $leftToDeduct);
+            $newAdj  = floatval($a['AdjustedAmount']) + $deduct;
+            $newRem  = max(0, floatval($a['Amount']) - $newAdj);
+            $status  = $newRem <= 0 ? 'FullyAdjusted' : 'PartiallyAdjusted';
+            $pdo->prepare("UPDATE partyadvance SET AdjustedAmount=?,RemainingAmount=?,Status=? WHERE PartyAdvanceId=?")
+                ->execute([$newAdj, $newRem, $status, $a['PartyAdvanceId']]);
+            $used[] = [$a['PartyAdvanceId'], $deduct];
+            $leftToDeduct -= $deduct;
+        }
+        return $used;
+    }
+
+    private static function getPartyTotalBalance(PDO $pdo, int $partyId): float {
+        $s = $pdo->prepare("SELECT COALESCE(SUM(RemainingAmount),0) FROM partyadvance WHERE PartyId = ?");
+        $s->execute([$partyId]);
+        return floatval($s->fetchColumn());
     }
 }

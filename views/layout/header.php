@@ -20,7 +20,7 @@
     <!-- Theme Styles -->
     <link href="/Sama_Roadlines/assets/css/styles.css" rel="stylesheet">
 
-    <!-- ✅ All Icons via CDN — No local icon dependency -->
+    <!-- Icons via CDN -->
     <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" rel="stylesheet">
@@ -81,6 +81,171 @@
         .badge { font-size: 11px; }
 
         /* ════════════════════════════════
+           HEADER SEARCH
+        ════════════════════════════════ */
+        .header-search-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .header-search-input {
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 6px 14px 6px 36px;
+            font-size: 13px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: #1e293b;
+            background: #f8fafc;
+            width: 220px;
+            transition: all 0.25s;
+            outline: none;
+        }
+        .header-search-input:focus {
+            border-color: #1d4ed8;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(29,78,216,0.10);
+            width: 260px;
+        }
+        .header-search-input::placeholder { color: #94a3b8; }
+        .header-search-icon {
+            position: absolute;
+            left: 10px;
+            font-size: 15px;
+            color: #94a3b8;
+            pointer-events: none;
+        }
+
+        /* ════════════════════════════════
+           NOTIFICATION BELL
+        ════════════════════════════════ */
+        .notif-bell-btn {
+            position: relative;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: #f0f4ff;
+            border: 1.5px solid #c7d7fc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #1d4ed8;
+            font-size: 18px;
+        }
+        .notif-bell-btn:hover {
+            background: #dbeafe;
+            box-shadow: 0 2px 10px rgba(29,78,216,0.15);
+        }
+        .notif-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ef4444;
+            color: #fff;
+            font-size: 9px;
+            font-weight: 800;
+            width: 17px;
+            height: 17px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #fff;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        /* Notification Dropdown */
+        .notif-dropdown {
+            min-width: 340px;
+            border-radius: 14px;
+            border: 1.5px solid #e2e8f0;
+            box-shadow: 0 12px 40px rgba(15,23,42,0.12);
+            padding: 0;
+            overflow: hidden;
+        }
+        .notif-header {
+            background: linear-gradient(135deg, #0f172a, #1d4ed8);
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .notif-header span {
+            color: #fff;
+            font-size: 13.5px;
+            font-weight: 700;
+        }
+        .notif-mark-all {
+            color: #93c5fd;
+            font-size: 11px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .notif-mark-all:hover { color: #fff; }
+        .notif-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.15s;
+            cursor: pointer;
+        }
+        .notif-item:hover { background: #f8fafc; }
+        .notif-item.unread { background: #eff6ff; }
+        .notif-item.unread:hover { background: #dbeafe; }
+        .notif-icon-wrap {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            flex-shrink: 0;
+        }
+        .notif-text { flex: 1; }
+        .notif-text strong {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 700;
+            color: #1e293b;
+            line-height: 1.3;
+        }
+        .notif-text span {
+            font-size: 11.5px;
+            color: #64748b;
+            display: block;
+            margin-top: 2px;
+        }
+        .notif-time {
+            font-size: 10.5px;
+            color: #94a3b8;
+            white-space: nowrap;
+            align-self: flex-start;
+            margin-top: 2px;
+        }
+        .notif-unread-dot {
+            width: 7px;
+            height: 7px;
+            background: #1d4ed8;
+            border-radius: 50%;
+            align-self: center;
+            flex-shrink: 0;
+        }
+        .notif-footer {
+            padding: 10px 16px;
+            text-align: center;
+            background: #f8fafc;
+        }
+        .notif-footer a {
+            font-size: 12.5px;
+            color: #1d4ed8;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        /* ════════════════════════════════
            HEADER CLOCK/CALENDAR WIDGET
         ════════════════════════════════ */
         .header-datetime-widget {
@@ -98,8 +263,6 @@
         .header-datetime-widget:hover {
             box-shadow: 0 2px 12px rgba(29, 78, 216, 0.12);
         }
-
-        /* Date part */
         .hdt-date {
             display: flex;
             align-items: center;
@@ -110,12 +273,7 @@
             border-right: 1px solid #c7d7fc;
             padding-right: 10px;
         }
-        .hdt-date i {
-            font-size: 15px;
-            color: #1d4ed8;
-        }
-
-        /* Day badge */
+        .hdt-date i { font-size: 15px; color: #1d4ed8; }
         .hdt-day-badge {
             background: #1d4ed8;
             color: #fff;
@@ -125,8 +283,6 @@
             border-radius: 20px;
             letter-spacing: 0.3px;
         }
-
-        /* Clock part */
         .hdt-clock {
             display: flex;
             align-items: center;
@@ -137,12 +293,7 @@
             font-variant-numeric: tabular-nums;
             letter-spacing: 0.5px;
         }
-        .hdt-clock i {
-            font-size: 15px;
-            color: #f59e0b;
-        }
-
-        /* AM/PM badge */
+        .hdt-clock i { font-size: 15px; color: #f59e0b; }
         .hdt-ampm {
             font-size: 10px;
             font-weight: 700;
@@ -150,8 +301,16 @@
             letter-spacing: 0.5px;
         }
 
-        /* Confirm Logout */
+        /* ── User Dropdown ── */
         .logout-confirm-btn { cursor: pointer; }
+
+        /* ── Custom Header Avatar ── */
+        .custom-header-avatar {
+            width: 36px;
+            height: 36px;
+            object-fit: cover;
+            border: 2px solid #e2e8f0;
+        }
     </style>
 </head>
 
@@ -185,6 +344,7 @@
                     </a>
                 </div>
             </div>
+
             <!-- Sidebar Toggle -->
             <div class="header-element mx-lg-0 mx-2">
                 <a aria-label="Hide Sidebar"
@@ -192,6 +352,18 @@
                    data-bs-toggle="sidebar" href="javascript:void(0);">
                     <span></span>
                 </a>
+            </div>
+
+            <!-- ── Search Bar ── -->
+            <div class="header-element d-none d-lg-flex align-items-center ms-2">
+                <div class="header-search-wrap">
+                    <i class="ri-search-line header-search-icon"></i>
+                    <input type="text"
+                           class="header-search-input"
+                           id="headerSearchInput"
+                           placeholder="Search trips, parties, vehicles…"
+                           autocomplete="off">
+                </div>
             </div>
         </div>
         <!-- /Left -->
@@ -202,13 +374,11 @@
             <!-- ════ DATE & TIME WIDGET ════ -->
             <li class="header-element d-none d-md-flex align-items-center">
                 <div class="header-datetime-widget" id="datetimeWidget">
-                    <!-- Date section -->
                     <div class="hdt-date">
                         <i class="ri-calendar-line"></i>
                         <span id="hdtDateStr">--</span>
                         <span class="hdt-day-badge" id="hdtDayName">---</span>
                     </div>
-                    <!-- Clock section -->
                     <div class="hdt-clock" style="padding-left:10px;">
                         <i class="ri-time-line"></i>
                         <span id="hdtTime">--:--:--</span>
@@ -216,7 +386,92 @@
                     </div>
                 </div>
             </li>
-            <!-- /Date & Time Widget -->
+
+            <!-- ════ NOTIFICATION BELL ════ -->
+            <li class="header-element dropdown d-flex align-items-center">
+                <div class="notif-bell-btn dropdown-toggle"
+                     data-bs-toggle="dropdown"
+                     data-bs-auto-close="outside"
+                     aria-expanded="false"
+                     id="notifDropdownToggle"
+                     title="Notifications">
+                    <i class="ri-notification-3-line"></i>
+                    <span class="notif-badge" id="notifCount">3</span>
+                </div>
+
+                <div class="dropdown-menu notif-dropdown" aria-labelledby="notifDropdownToggle">
+                    <!-- Header -->
+                    <div class="notif-header">
+                        <span>🔔 Notifications <span id="notifHeaderCount" style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:20px;font-size:11px;">3 new</span></span>
+                        <a class="notif-mark-all" href="javascript:void(0);" onclick="markAllRead()">Mark all read</a>
+                    </div>
+
+                    <!-- Items -->
+                    <div id="notifList" style="max-height:320px;overflow-y:auto;">
+
+                        <div class="notif-item unread" id="notif-1">
+                            <div class="notif-icon-wrap" style="background:#dbeafe;">🚛</div>
+                            <div class="notif-text">
+                                <strong>New Trip Added</strong>
+                                <span>Regular trip #RT-1042 created for Ahmedabad route.</span>
+                            </div>
+                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+                                <span class="notif-time">5 min ago</span>
+                                <span class="notif-unread-dot"></span>
+                            </div>
+                        </div>
+
+                        <div class="notif-item unread" id="notif-2">
+                            <div class="notif-icon-wrap" style="background:#dcfce7;">💰</div>
+                            <div class="notif-text">
+                                <strong>Payment Received</strong>
+                                <span>Bill payment of ₹45,000 received from Raj Traders.</span>
+                            </div>
+                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+                                <span class="notif-time">1 hr ago</span>
+                                <span class="notif-unread-dot"></span>
+                            </div>
+                        </div>
+
+                        <div class="notif-item unread" id="notif-3">
+                            <div class="notif-icon-wrap" style="background:#fef9c3;">⚠️</div>
+                            <div class="notif-text">
+                                <strong>Owner Advance Pending</strong>
+                                <span>Owner advance for vehicle GJ-05-AB-1234 is overdue.</span>
+                            </div>
+                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+                                <span class="notif-time">3 hr ago</span>
+                                <span class="notif-unread-dot"></span>
+                            </div>
+                        </div>
+
+                        <div class="notif-item" id="notif-4">
+                            <div class="notif-icon-wrap" style="background:#f3e8ff;">📋</div>
+                            <div class="notif-text">
+                                <strong>Bill Generated</strong>
+                                <span>Regular bill #RB-2024-089 generated successfully.</span>
+                            </div>
+                            <span class="notif-time">Yesterday</span>
+                        </div>
+
+                        <div class="notif-item" id="notif-5">
+                            <div class="notif-icon-wrap" style="background:#ffe4e6;">🔑</div>
+                            <div class="notif-text">
+                                <strong>Login Detected</strong>
+                                <span>Admin logged in from a new device.</span>
+                            </div>
+                            <span class="notif-time">2 days ago</span>
+                        </div>
+
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="notif-footer">
+                        <a href="javascript:void(0);">View all notifications →</a>
+                    </div>
+                </div>
+            </li>
+            <!-- /Notification Bell -->
 
             <!-- ════ User Profile Dropdown ════ -->
             <li class="header-element dropdown">
@@ -239,29 +494,37 @@
                         <i class="ri-arrow-down-s-line" style="font-size:16px;color:#94a3b8;"></i>
                     </div>
                 </a>
+
                 <ul class="main-header-dropdown dropdown-menu pt-0 overflow-hidden header-profile-dropdown dropdown-menu-end"
                     aria-labelledby="mainHeaderProfile"
-                    style="min-width:200px;">
+                    style="min-width:210px;border-radius:14px;border:1.5px solid #e2e8f0;box-shadow:0 12px 40px rgba(15,23,42,0.12);">
 
                     <!-- Profile header -->
                     <li>
                         <div class="dropdown-item text-center py-3 border-bottom"
-                             style="background:linear-gradient(135deg,#f0f4ff,#e8f0fe);">
-                            <div style="width:44px;height:44px;background:linear-gradient(135deg,#0f172a,#1d4ed8);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:20px;">
+                             style="background:linear-gradient(135deg,#0f172a,#1d4ed8);">
+                            <div style="width:48px;height:48px;background:rgba(255,255,255,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 8px;font-size:22px;border:1.5px solid rgba(255,255,255,0.2);">
                                 👤
                             </div>
-                            <div style="font-size:14px;font-weight:700;color:#0f172a;">
+                            <div style="font-size:14px;font-weight:700;color:#fff;">
                                 <?= htmlspecialchars($_SESSION['username'] ?? 'Admin') ?>
                             </div>
-                            <div style="font-size:11px;color:#64748b;">Administrator</div>
+                            <div style="font-size:11px;color:#93c5fd;margin-top:2px;">Administrator</div>
                         </div>
                     </li>
 
                     <li>
                         <a class="dropdown-item d-flex align-items-center gap-2 py-2" href="javascript:void(0);"
-                           style="font-size:13.5px;">
+                           style="font-size:13px;">
                             <i class="ri-user-settings-line" style="font-size:16px;color:#1d4ed8;"></i>
                             My Profile
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2 py-2" href="javascript:void(0);"
+                           style="font-size:13px;">
+                            <i class="ri-lock-password-line" style="font-size:16px;color:#7c3aed;"></i>
+                            Change Password
                         </a>
                     </li>
 
@@ -271,7 +534,7 @@
                         <a class="dropdown-item d-flex align-items-center gap-2 py-2 logout-confirm-btn"
                            href="javascript:void(0);"
                            onclick="confirmLogout()"
-                           style="font-size:13.5px;">
+                           style="font-size:13px;">
                             <i class="ri-logout-box-r-line" style="font-size:16px;color:#ef4444;"></i>
                             <span style="color:#ef4444;font-weight:600;">Log Out</span>
                         </a>
@@ -294,21 +557,17 @@
 
 /* ── Live Clock & Date ── */
 function updateHeaderClock() {
-    var now = new Date();
-
-    // Date string: "21 Feb 2026"
+    var now    = new Date();
     var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     var days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     var dateStr = now.getDate().toString().padStart(2,'0') + ' ' +
-                  months[now.getMonth()] + ' ' +
-                  now.getFullYear();
+                  months[now.getMonth()] + ' ' + now.getFullYear();
     var dayName = days[now.getDay()];
 
-    // Time 12-hour format
-    var h   = now.getHours();
-    var m   = now.getMinutes().toString().padStart(2,'0');
-    var s   = now.getSeconds().toString().padStart(2,'0');
+    var h    = now.getHours();
+    var m    = now.getMinutes().toString().padStart(2,'0');
+    var s    = now.getSeconds().toString().padStart(2,'0');
     var ampm = h >= 12 ? 'PM' : 'AM';
     h = h % 12 || 12;
     var timeStr = h.toString().padStart(2,'0') + ':' + m + ':' + s;
@@ -323,15 +582,39 @@ function updateHeaderClock() {
     if (tEl)  tEl.textContent  = timeStr;
     if (aEl)  aEl.textContent  = ampm;
 }
-
-// Run immediately + every second
 updateHeaderClock();
 setInterval(updateHeaderClock, 1000);
 
 
+/* ── Notifications: Mark All Read ── */
+var unreadCount = 3;
+
+function markAllRead() {
+    document.querySelectorAll('.notif-item.unread').forEach(function(el) {
+        el.classList.remove('unread');
+        var dot = el.querySelector('.notif-unread-dot');
+        if (dot) dot.remove();
+    });
+    unreadCount = 0;
+    updateNotifBadge();
+}
+
+function updateNotifBadge() {
+    var badge   = document.getElementById('notifCount');
+    var hdrCount = document.getElementById('notifHeaderCount');
+    if (unreadCount > 0) {
+        badge.style.display = 'flex';
+        badge.textContent   = unreadCount;
+        if (hdrCount) hdrCount.textContent = unreadCount + ' new';
+    } else {
+        badge.style.display = 'none';
+        if (hdrCount) hdrCount.textContent = 'All caught up';
+    }
+}
+
+
 /* ── Confirm Logout (SweetAlert2) ── */
 function confirmLogout() {
-    // Fallback if Swal not loaded yet
     if (typeof Swal === 'undefined') {
         if (confirm('Are you sure you want to logout?')) {
             window.location.href = "/Sama_Roadlines/logout.php";
@@ -346,12 +629,7 @@ function confirmLogout() {
         confirmButtonColor: '#ef4444',
         cancelButtonColor:  '#64748b',
         confirmButtonText:  '<i class="ri-logout-box-r-line me-1"></i> Yes, Logout',
-        cancelButtonText:   'Cancel',
-        borderRadius:       '14px',
-        customClass: {
-            popup:         'swal-custom-popup',
-            confirmButton: 'swal-custom-confirm'
-        }
+        cancelButtonText:   'Cancel'
     }).then(function(result) {
         if (result.isConfirmed) {
             window.location.href = "/Sama_Roadlines/logout.php";

@@ -6,12 +6,26 @@ class OwnerPayment {
     /**
      * Net Payable to Owner = FreightAmount + LabourCharge + HoldingCharge + OtherCharge + TDS - Commission
      * When fully paid -> CommissionStatus = 'Received' auto-marked
+     * Returns ALL trips (Pending + PaidDirectly) — UI splits by FreightPaymentToOwnerStatus
      */
-    public static function getAllTripsWithPaymentStatus(?int $ownerId = null): array {
+    public static function getAllTripsWithPaymentStatus(?int $ownerId = null, array $dateFilter = []): array {
         global $pdo;
 
-        $where  = $ownerId ? "AND vom.VehicleOwnerId = :ownerId" : "";
-        $params = $ownerId ? [':ownerId' => $ownerId] : [];
+        $where  = "WHERE vom.VehicleOwnerId IS NOT NULL";
+        $params = [];
+
+        if ($ownerId) {
+            $where .= " AND vom.VehicleOwnerId = :ownerId";
+            $params[':ownerId'] = $ownerId;
+        }
+        if (!empty($dateFilter['from'])) {
+            $where .= " AND t.TripDate >= :dateFrom";
+            $params[':dateFrom'] = $dateFilter['from'];
+        }
+        if (!empty($dateFilter['to'])) {
+            $where .= " AND t.TripDate <= :dateTo";
+            $params[':dateTo'] = $dateFilter['to'];
+        }
 
         $stmt = $pdo->prepare("
             SELECT
@@ -32,7 +46,6 @@ class OwnerPayment {
                 vom.OwnerName, vom.MobileNo,
                 vom.BankName, vom.AccountNo, vom.IFSC, vom.UPI,
                 p1.PartyName AS ConsignerName,
-                p2.PartyName AS ConsigneeName,
                 p3.PartyName AS AgentName,
                 COALESCE(op.TotalPaid,    0) AS TotalPaid,
                 COALESCE(op.PaymentCount, 0) AS PaymentCount
@@ -40,7 +53,6 @@ class OwnerPayment {
             LEFT JOIN VehicleMaster      v   ON t.VehicleId      = v.VehicleId
             LEFT JOIN VehicleOwnerMaster vom ON v.VehicleOwnerId = vom.VehicleOwnerId
             LEFT JOIN PartyMaster        p1  ON t.ConsignerId    = p1.PartyId
-            LEFT JOIN PartyMaster        p2  ON t.ConsigneeId    = p2.PartyId
             LEFT JOIN PartyMaster        p3  ON t.AgentId        = p3.PartyId
             LEFT JOIN TripCommission     tc  ON t.TripId         = tc.TripId
             LEFT JOIN (
@@ -50,9 +62,7 @@ class OwnerPayment {
                 FROM ownerpayment
                 GROUP BY TripId
             ) op ON t.TripId = op.TripId
-            WHERE vom.VehicleOwnerId IS NOT NULL
-              AND (t.FreightPaymentToOwnerStatus IS NULL OR t.FreightPaymentToOwnerStatus = 'Pending')
-              $where
+            $where
             ORDER BY t.TripDate DESC, t.TripId DESC
         ");
         $stmt->execute($params);
@@ -66,6 +76,7 @@ class OwnerPayment {
             $r['TDS']            = floatval($r['TDS']);
             $r['Commission']     = floatval($r['Commission']);
             $r['TotalCharges']   = $r['LabourCharge'] + $r['HoldingCharge'] + $r['OtherCharge'];
+            $r['IsPaidDirectly'] = ($r['FreightPaymentToOwnerStatus'] === 'PaidDirectly');
 
             /* Net Payable = Freight + Charges + TDS - Commission */
             $r['NetPayable'] = max(0,
@@ -115,13 +126,16 @@ class OwnerPayment {
             $status             = self::recalcStatus($tripId, $pdo);
             $commissionReceived = false;
 
-            /* Auto-mark commission Received when fully paid */
             if ($status === 'Paid') {
+                // Auto-mark commission Received only for Party-recovery trips
+                // (PaidDirectly trips have RecoveryFrom='Owner' — manual recovery)
                 $u = $pdo->prepare("
                     UPDATE TripCommission
                     SET CommissionStatus = 'Received',
                         ReceivedDate     = CURDATE()
                     WHERE TripId = ?
+                      AND RecoveryFrom = 'Party'
+                      AND CommissionStatus = 'Pending'
                 ");
                 $u->execute([$tripId]);
                 $commissionReceived = $u->rowCount() > 0;
@@ -191,7 +205,9 @@ class OwnerPayment {
                          THEN COALESCE(tc.CommissionAmount, 0)
                          ELSE 0
                     END
-                ), 0) AS CommissionReceived
+                ), 0) AS CommissionReceived,
+                COUNT(DISTINCT CASE WHEN t.FreightPaymentToOwnerStatus = 'PaidDirectly'
+                                    THEN t.TripId END) AS DirectlyPaidTrips
             FROM VehicleOwnerMaster vom
             LEFT JOIN VehicleMaster  v   ON v.VehicleOwnerId  = vom.VehicleOwnerId
             LEFT JOIN TripMaster     t   ON t.VehicleId       = v.VehicleId
@@ -202,9 +218,6 @@ class OwnerPayment {
                 GROUP BY TripId
             ) op ON op.TripId = t.TripId
             WHERE vom.IsActive = 'Yes'
-              AND (t.FreightPaymentToOwnerStatus IS NULL
-                   OR t.FreightPaymentToOwnerStatus = 'Pending'
-                   OR t.TripId IS NULL)
             GROUP BY vom.VehicleOwnerId, vom.OwnerName, vom.MobileNo, vom.City
             ORDER BY vom.OwnerName ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
